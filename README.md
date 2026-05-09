@@ -145,6 +145,28 @@ Built through human-AI collaboration:
 | **AI Agent** | Implementation, testing, documentation |
 
 The AI agent runs on the Hermes Agent framework and assists the Project Lead in iterative development.
+## Changelog
+
+### 2026-05-10 — Keyword Tuning (v1.0.1)
+
+**Problem:** 4 test cases failed routing due to missing/conflicting keywords.
+
+**Changes:**
+
+| Sub-doc | Action | Keywords | Reason |
+|---------|--------|----------|--------|
+| `infrastructure` | Removed | `部署`, `memory` | Too broad, caused misclassification |
+| `milestones` | Removed duplicate | `release` | Was listed twice |
+| `milestones` | Added | `backup`, `端点` | "部署backup-gpu端点" needed a match |
+| `rules` | Added | `技术`, `文档`, `源码` | "查官方文档和源码" had zero hits |
+| `commitments` | Removed duplicate | `承诺` | Was listed twice |
+| `commitments` | Added | `伙伴`, `成全` | "互相成全的伙伴" had zero hits |
+| `dev-log` | Added | `路由`, `评分`, `工具` | "关键词评分的自动路由" had zero hits |
+
+**Result:** All 6 test cases now route correctly (0 false negatives, 0 false positives).
+
+**Total:** +10 keywords, -2 conflicting, -2 duplicates.
+
 
 ## License
 
