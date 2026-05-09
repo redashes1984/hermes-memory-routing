@@ -1,5 +1,6 @@
 # Hermes Memory Routing
 
+> Indexed memory architecture — keep MEMORY.md lean, auto-route content to topic-specific sub-documents.
 
 ## Scope Boundary
 
@@ -8,8 +9,6 @@
 This project handles only one concern: **routing content that belongs in MEMORY.md into topic-specific sub-documents.**
 
 It does **not** touch — and will **never** touch — memOS, vector memory, semantic search, or any other long-term memory management system. Those have their own tools, their own storage, their own retrieval paths. Memory routing is about the system prompt injection layer; everything else is someone else's domain.
-
-> Indexed memory architecture — keep MEMORY.md lean, auto-route content to topic-specific sub-documents.
 
 ## Problem
 
