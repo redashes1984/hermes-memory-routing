@@ -27,7 +27,7 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
     "infrastructure": {
         "description": "Infrastructure, deployment, hardware, networking",
         "keywords": [
-            "server", "deploy", "container", "network", "gpu", "drive",
+            "server", "container", "network", "gpu", "drive",
             "endpoint", "port", "ip", "config", "infrastructure",
             "hardware", "systemd", "docker", "service", "inference",
         ],
@@ -44,6 +44,7 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
         "keywords": [
             "milestone", "version", "release", "first", "completed",
             "anniversary", "date", "event", "upgrade", "launch",
+            "backup", "endpoint",
         ],
     },
     "rules": {
@@ -51,13 +52,14 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
         "keywords": [
             "rule", "convention", "standard", "workflow", "process",
             "guideline", "practice", "checklist", "protocol", "policy",
+            "tech", "documentation", "source-code",
         ],
     },
     "commitments": {
         "description": "Long-term promises and obligations",
         "keywords": [
-            "commitment", "promise", "promise", "always", "never",
-            "guard", "protect", "respect", "together",
+            "commitment", "promise", "always", "never",
+            "guard", "protect", "respect", "together", "partner", "fulfill",
         ],
     },
     "dev-log": {
@@ -65,6 +67,7 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
         "keywords": [
             "dev", "log", "feature", "bug", "fix", "change", "refactor",
             "test", "merge", "commit", "release", "sprint", "changelog",
+            "routing", "scoring", "tool",
         ],
     },
 }
