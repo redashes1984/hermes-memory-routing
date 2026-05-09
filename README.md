@@ -141,3 +141,32 @@ The AI agent runs on the Hermes Agent framework and assists the Project Lead in 
 ## License
 
 MIT
+## Upstream Integration
+
+To merge this into Hermes Agent's `memory_tool.py` as an opt-in feature, the key additions are:
+
+### Core Functions
+
+1. **`SUB_DOCS` dict** — Configurable sub-doc definitions (description + keyword list)
+2. **`get_memory_sub_docs_dir()`** — Returns the memory sub-documents directory
+3. **`route_content_to_sub_doc(content)`** — Keyword scoring: returns `(doc_name, score)`
+4. **`classify_content_with_llm(content)`** — Optional LLM classifier (async review)
+5. **`_async_llm_review(content, keyword_doc, sub_dir)`** — Background correction thread
+6. **`_add_to_sub_doc(doc_name, content)`** — Atomic sub-doc write with deduplication
+7. **Modified `add()` method** — Routes content before writing (only when enabled)
+
+### Recommended PR Phases
+
+1. **Phase 1:** Keyword routing + sub-doc write infrastructure (core)
+2. **Phase 2:** Optional LLM review (configurable, opt-in)
+3. **Phase 3:** `[include:]` directive for explicit sub-doc references in MEMORY.md
+
+### Config Flag
+
+Add to `config.yaml`:
+```yaml
+memory:
+  sub_doc_routing: true        # Enable auto-routing
+  classifier_url: "http://localhost:11434/v1"  # Optional LLM endpoint
+  classifier_model: "your-model"
+```
