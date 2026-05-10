@@ -1,0 +1,74 @@
+{
+  "infrastructure": [
+    "server",
+    "docker",
+    "container",
+    "network",
+    "proxmox",
+    "pve",
+    "lxc",
+    "gpu",
+    "nvidia",
+    "inference",
+    "model",
+    "quantization",
+    "memory"
+  ],
+  "philosophy": [
+    "thoughts",
+    "values",
+    "beliefs",
+    "wisdom",
+    "reflection",
+    "principle",
+    "philosophy",
+    "ethics"
+  ],
+  "dev_log": [
+    "code",
+    "programming",
+    "debugging",
+    "test",
+    "deploy",
+    "feature",
+    "bug",
+    "issue",
+    "pr"
+  ],
+  "rules": [
+    "rules",
+    "guidelines",
+    "standards",
+    "policy",
+    "best practice",
+    "convention",
+    "checklist"
+  ],
+  "milestones": [
+    "milestone",
+    "achievement",
+    "deployment",
+    "release",
+    "version",
+    "update",
+    "milestone"
+  ],
+  "commitments": [
+    "commitment",
+    "promise",
+    "goal",
+    "task",
+    "responsibility",
+    "responsibility",
+    "task"
+  ],
+  "hell_contract": [
+    "hell contract",
+    "precision",
+    "technical",
+    "requirements",
+    "specifications",
+    "goals",
+    "requirements"
+  ]
+}

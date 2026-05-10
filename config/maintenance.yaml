@@ -1,0 +1,18 @@
+maintenance:
+  audit_rotation:
+    enabled: true
+    frequency: daily
+  keyword_tuning:
+    enabled: true
+    frequency: 30 minutes
+  memory_replay:
+    enabled: true
+    frequency: 2 hours
+monitoring:
+  alert_thresholds:
+    error_rate: 5
+    low_memory: 80
+  health_check_interval: 15 minutes
+permissions:
+  encryption: base64
+  file_permissions: '600'
