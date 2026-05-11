@@ -93,14 +93,25 @@ SUB_DOCS = {
 ## LLM Classifier Configuration
 
 ```bash
-# Endpoint (any OpenAI-compatible API)
-export HERMES_MEMORY_CLASSIFIER_URL="http://localhost:11434/v1"
-export HERMES_MEMORY_CLASSIFIER_MODEL="<your-model>"
+# Hermes Agent library path (for scripts to import memory_tool)
+export HERMES_AGENT_LIB="/usr/local/lib/hermes-agent"
 
-# Timeout (seconds) — default 10
+# LLM classifier endpoint (any OpenAI-compatible API)
+export HERMES_MEMORY_CLASSIFIER_URL="http://10.10.4.81:11434/v1"
+export HERMES_MEMORY_CLASSIFIER_MODEL="Qwen3-4B"
+
+# Timeout (seconds) — default 30
+export HERMES_MEMORY_CLASSIFIER_TIMEOUT="30"
 ```
 
-The LLM classifier receives a prompt with all sub-doc descriptions and returns only the doc name. It is designed to be fast (< 2s) since it runs in a background thread.
+| Variable | Default | Used By |
+|---|---|---|
+| `HERMES_AGENT_LIB` | `/usr/local/lib/hermes-agent` | scripts import path |
+| `HERMES_MEMORY_CLASSIFIER_URL` | `http://localhost:11434/v1` | LLM async review |
+| `HERMES_MEMORY_CLASSIFIER_MODEL` | `your-model` | LLM async review |
+| `HERMES_MEMORY_CLASSIFIER_TIMEOUT` | `30` | LLM async review |
+
+All variables are optional. Keyword routing (score >= 3) works without any of them.
 
 ## When to Use
 

@@ -177,9 +177,21 @@ SUB_DOCS = {
 ### LLM Classifier Configuration
 
 ```bash
-export HERMES_MEMORY_CLASSIFIER_URL="http://localhost:11434/v1"  # Any OpenAI-compatible API
-export HERMES_MEMORY_CLASSIFIER_MODEL="your-model"
+# Hermes Agent library path (for scripts)
+export HERMES_AGENT_LIB="/usr/local/lib/hermes-agent"
+
+# LLM classifier (optional — keyword routing works without it)
+export HERMES_MEMORY_CLASSIFIER_URL="http://10.10.4.81:11434/v1"
+export HERMES_MEMORY_CLASSIFIER_MODEL="Qwen3-4B"
+export HERMES_MEMORY_CLASSIFIER_TIMEOUT="30"
 ```
+
+| Variable | Default | Used By |
+|---|---|---|
+| `HERMES_AGENT_LIB` | `/usr/local/lib/hermes-agent` | scripts import path |
+| `HERMES_MEMORY_CLASSIFIER_URL` | `http://localhost:11434/v1` | LLM async review |
+| `HERMES_MEMORY_CLASSIFIER_MODEL` | `your-model` | LLM async review |
+| `HERMES_MEMORY_CLASSIFIER_TIMEOUT` | `30` (seconds) | LLM async review |
 
 The classifier uses a minimal prompt (10 tokens max, temperature 0.0) for speed and determinism.
 

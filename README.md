@@ -75,10 +75,23 @@ User: memory_tool.add(target="memory", content="...")
 ## Environment Variables
 
 ```bash
+# Hermes Agent library path (for scripts to import memory_tool)
+export HERMES_AGENT_LIB="/usr/local/lib/hermes-agent"
+
 # LLM classifier endpoint (any OpenAI-compatible API)
-export HERMES_MEMORY_CLASSIFIER_URL="http://localhost:11434/v1"
-export HERMES_MEMORY_CLASSIFIER_MODEL="your-model-name"
+export HERMES_MEMORY_CLASSIFIER_URL="http://10.10.4.81:11434/v1"
+export HERMES_MEMORY_CLASSIFIER_MODEL="Qwen3-4B"
+export HERMES_MEMORY_CLASSIFIER_TIMEOUT="30"
 ```
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `HERMES_AGENT_LIB` | Optional | `/usr/local/lib/hermes-agent` | Path to Hermes Agent `tools/` directory |
+| `HERMES_MEMORY_CLASSIFIER_URL` | Optional | `http://localhost:11434/v1` | LLM classifier endpoint (OpenAI-compatible) |
+| `HERMES_MEMORY_CLASSIFIER_MODEL` | Optional | `your-model` | Model name for async LLM review |
+| `HERMES_MEMORY_CLASSIFIER_TIMEOUT` | Optional | `30` | Classifier timeout in seconds |
+
+All variables are optional. Keyword routing (score >= 3) works without any of them. LLM review (score 1-2) requires `CLASSIFIER_URL` and `CLASSIFIER_MODEL`.
 
 ## Keyword Configuration
 
