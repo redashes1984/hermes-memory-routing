@@ -1,5 +1,7 @@
 # Hermes Memory Routing
 
+[English](README.md) | [中文](README.zh-CN.md)
+
 > Indexed memory architecture — keep MEMORY.md lean, auto-route content to topic-specific sub-documents.
 
 ## Scope Boundary
@@ -54,7 +56,7 @@ User: memory_tool.add(target="memory", content="...")
             │                 (background thread, non-blocking)
            No
             │
-        Write to MEMORY.md (fallback)
+        Write to memory/fallback.md (fallback)
 ```
 
 ### Thresholds
@@ -63,7 +65,13 @@ User: memory_tool.add(target="memory", content="...")
 |-----------|----------|---------|
 | `>= 3` keyword matches | Fast path: direct write | Zero |
 | `1-2` keyword matches | Write + async LLM review | Milliseconds (LLM in background) |
-| `0` keyword matches | Write to MEMORY.md | Zero |
+| `0` keyword matches | Write to `memory/fallback.md` | Zero |
+
+### Fallback Routing
+
+- 0-match entries go to `memory/fallback.md`, keeping MEMORY.md index clean
+- During idle compaction, fallback.md entries are re-scored: matched entries move to the correct sub-doc, unmatched ones are promoted back to MEMORY.md as navigation entries
+- Keyword audit script scans fallback.md and suggests missing keywords
 
 ### Async LLM Review
 
@@ -140,17 +148,18 @@ print(f"→ {doc} (score: {score})")
 
 ```
 hermes-memory-routing/
-├── README.md              # This file
-├── CHANGELOG.md           # Version history
-├── SKILL.md               # Hermes Agent Skill document
-├── .gitignore             # Runtime files excluded from Git
+├── README.md                    # English version
+├── README.zh-CN.md              # 中文版本
+├── CHANGELOG.md                 # Version history
+├── SKILL.md                     # Hermes Agent Skill document
+├── .gitignore                   # Runtime files excluded from Git
 ├── src/
-│   └── memory_routing.py  # Core routing logic (extracted, standalone)
+│   └── memory_routing.py        # Core routing logic (extracted, standalone)
 ├── scripts/
-│   ├── memory-replay.py   # Idle compaction & fallback dedup
+│   ├── memory-replay.py         # Idle compaction & fallback dedup
 │   └── memory-keyword-audit.py  # Keyword coverage audit
 └── docs/
-    └── design.md          # Architecture design document
+    └── design.md                # Architecture design document
 ```
 
 ## Project Identity
