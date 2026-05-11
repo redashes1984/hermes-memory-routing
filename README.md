@@ -67,6 +67,36 @@ User: memory_tool.add(target="memory", content="...")
 | `1-2` keyword matches | Write + async LLM review | Milliseconds (LLM in background) |
 | `0` keyword matches | Write to `memory/fallback.md` | Zero |
 
+### V2 Keyword Scoring Algorithm
+
+Scoring is not a simple keyword count. It runs in four phases:
+
+1. **Raw matching** — scan content against all keywords in every sub-doc.
+2. **Conflict resolution & weighting** — shared keywords are awarded to the doc with the smallest keyword list; keyword weights by length: >= 3 chars = 2.0 (strong), >= 2 = 1.0 (medium), 1 char = 0.5 (weak).
+3. **Normalization & specificity bonus** — score = weighted / sqrt(total keywords) to prevent keyword-list "black holes"; a log1p-based specificity bonus rewards docs where matches represent a large fraction of their list.
+4. **Decision** — normalized score >= 0.6 (confident), >= 0.3 (tentative), < 0.3 (no match → fallback).
+
+Raw match count is also returned for backward compatibility with `KEYWORD_FAST_PATH` / `KEYWORD_LLM_REVIEW` thresholds.
+
+### Security Scanning
+
+Before any write, `_scan_memory_content()` blocks:
+- **Invisible Unicode characters** (zero-width space, BOM, etc.) — prevents injection payloads
+- **Threat patterns** — regex detection of prompt injection, system prompt exfiltration, and data leakage attempts
+
+Blocked entries are rejected with an error and never reach disk.
+
+### Fact Cache & Conflict Detection
+
+- **Fact cache** (`.fact_cache.json`): After each write, `_update_fact_cache()` extracts subject-attribute-value triples.
+- **Conflict detection** (`_detect_fact_conflict()`): Checks if new content contradicts cached facts (same subject + attribute, different value). If detected, `add()` returns a `fact_conflict` field with old/new values for the agent to review.
+
+### Audit Logging
+
+Every sub-doc write is logged to `.audit.jsonl` (excluded from Git via `.gitignore`):
+- Timestamp, target, routed doc name, keyword score
+- Used for debugging routing decisions and tracking memory growth
+
 ### Fallback Routing
 
 - 0-match entries go to `memory/fallback.md`, keeping MEMORY.md index clean
@@ -140,8 +170,25 @@ SUB_DOCS = {
 ```python
 from tools.memory_tool import route_content_to_sub_doc
 
+# Returns (doc_name, raw_match_count) — uses V2 scoring internally
 doc, score = route_content_to_sub_doc("Content to classify")
-print(f"→ {doc} (score: {score})")
+print(f"→ {doc} (raw match count: {score})")
+
+# Show detailed V2 scores per doc
+from tools.memory_tool import SUB_DOCS
+import math
+
+def show_v2_scores(content):
+    content_lower = content.lower()
+    for doc_name, info in SUB_DOCS.items():
+        matched = [kw for kw in info["keywords"] if kw.lower() in content_lower]
+        if matched:
+            weighted = sum(2.0 if len(k) >= 3 else 1.0 if len(k) >= 2 else 0.5 for k in matched)
+            total = len(info["keywords"])
+            norm = weighted / math.sqrt(total)
+            print(f"  {doc_name:20} weighted={weighted:.1f} norm={norm:.2f}  keywords: {matched}")
+
+show_v2_scores("Content to analyze")
 ```
 
 ## Repo Structure

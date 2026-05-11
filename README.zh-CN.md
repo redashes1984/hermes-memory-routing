@@ -67,6 +67,36 @@ MEMORY.md (§ 分隔的索引，注入系统提示)
 | `1-2` 个关键词匹配 | 写入子文档 + 异步 LLM 复核 | 毫秒级（LLM 在后台） |
 | `0` 个关键词匹配 | 写入 `memory/fallback.md` | 零 |
 
+### V2 关键词评分算法
+
+评分不是简单的关键词计数，而是四阶段算法：
+
+1. **原始匹配** — 扫描内容对比所有子文档的关键词列表。
+2. **冲突解决与加权** — 共享关键词（出现在多个子文档中）归到关键词列表最短的文档；关键词按长度加权：>= 3 字符 = 2.0（强），>= 2 = 1.0（中），1 字符 = 0.5（弱）。
+3. **归一化与特异性加分** — 评分 = 加权分 / sqrt(总关键词数)，防止关键词列表"黑洞"；通过 log1p 公式给予特异性加分，奖励命中关键词占列表比例高的文档。
+4. **决策** — 归一化评分 >= 0.6（置信），>= 0.3（暂定），< 0.3（无匹配 → 后备路由）。
+
+同时返回原始匹配计数，用于兼容 `KEYWORD_FAST_PATH` / `KEYWORD_LLM_REVIEW` 阈值。
+
+### 安全扫描
+
+每次写入前，`_scan_memory_content()` 会拦截：
+- **不可见 Unicode 字符**（零宽空格、BOM 等）— 防止注入 payload
+- **威胁模式** — 正则检测 prompt injection、系统提示泄露、数据外泄企图
+
+被拦截的条目会返回错误，不会写入磁盘。
+
+### 事实缓存与冲突检测
+
+- **事实缓存**（`.fact_cache.json`）：每次写入后，`_update_fact_cache()` 提取"主题-属性-值"三元组存入缓存。
+- **冲突检测**（`_detect_fact_conflict()`）：写入前检查新内容是否与缓存事实矛盾（相同主题 + 属性，不同值）。若发现冲突，`add()` 返回 `fact_conflict` 字段，包含旧值和新值供 Agent 审查。
+
+### 审计日志
+
+每次子文档写入都会记录到 `.audit.jsonl`（通过 `.gitignore` 排除在 Git 之外）：
+- 时间戳、目标（memory/user）、路由到的文档名、关键词评分
+- 用于调试路由决策和追踪记忆增长模式
+
 ### 后备路由（Fallback）
 
 - 0 匹配的条目写入 `memory/fallback.md`，不污染 MEMORY.md 索引
@@ -140,8 +170,25 @@ SUB_DOCS = {
 ```python
 from tools.memory_tool import route_content_to_sub_doc
 
+# 返回 (文档名, 原始匹配计数) — 内部使用 V2 评分
 doc, score = route_content_to_sub_doc("待分类内容")
-print(f"→ {doc} (评分: {score})")
+print(f"→ {doc} (原始匹配计数: {score})")
+
+# 查看详细的 V2 评分
+from tools.memory_tool import SUB_DOCS
+import math
+
+def show_v2_scores(content):
+    content_lower = content.lower()
+    for doc_name, info in SUB_DOCS.items():
+        matched = [kw for kw in info["keywords"] if kw.lower() in content_lower]
+        if matched:
+            weighted = sum(2.0 if len(k) >= 3 else 1.0 if len(k) >= 2 else 0.5 for k in matched)
+            total = len(info["keywords"])
+            norm = weighted / math.sqrt(total)
+            print(f"  {doc_name:20} weighted={weighted:.1f} norm={norm:.2f}  keywords: {matched}")
+
+show_v2_scores("要分析的内容")
 ```
 
 ## 仓库结构

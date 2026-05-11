@@ -91,7 +91,9 @@ Sub-documents do NOT use `§` — they are pure markdown files read via `read_fi
                      ┌──────────────┐
                      │ Fallback     │
                      │ Write to     │
-                     │ MEMORY.md    │
+                     │ fallback.md  │
+                     │ + async LLM  │───►  If classified:
+                     │   classify   │         migrate to sub-doc
                      └──────────────┘
 ```
 
@@ -101,9 +103,49 @@ Sub-documents do NOT use `§` — they are pure markdown files read via `read_fi
 |-----------|----------------|----------|-----------|
 | Fast Path | >= 3 | Direct write to sub-doc | High confidence, no need for LLM |
 | LLM Review | 1-2 | Write + async LLM review | Ambiguous — use LLM as safety net |
-| Fallback | 0 | Write to MEMORY.md | No sub-doc matches, keep in index |
+| Fallback | 0 | Write to `fallback.md` + async LLM classify | No sub-doc matches — LLM tries to classify immediately |
 
 **Why 3 for fast path?** With 3 keyword matches, the probability of misclassification is very low. A single keyword match is unreliable (common words like "memory" or "配置" may appear in many contexts).
+
+## V2 Keyword Scoring Algorithm
+
+The scoring engine (V2, 2026-05-10) is not a simple keyword count. It uses four phases:
+
+**Phase 1 — Raw matching:** Scan content against all keywords in every sub-doc's keyword list.
+
+**Phase 2 — Conflict resolution & weighting:**
+- Shared keywords (appearing in multiple sub-docs) are awarded to the doc with the smallest keyword list (most specific).
+- Keyword weights by length: >= 3 chars = 2.0 (strong), >= 2 chars = 1.0 (medium), 1 char = 0.5 (weak).
+
+**Phase 3 — Normalization & specificity bonus:**
+- Score = weighted_score / sqrt(total_keywords_in_doc) — penalizes docs with large keyword lists.
+- Specificity bonus = `log1p((weighted / total_keywords) * 10) * 0.3` — rewards docs where matched keywords represent a large fraction of their list.
+
+**Phase 4 — Decision thresholds (on normalized score):**
+- >= 0.6: confident match, return doc name
+- >= 0.3: tentative match, return doc name
+- < 0.3: no match, return None (triggers fallback)
+
+Raw match count is still returned for backward compatibility with `KEYWORD_FAST_PATH` / `KEYWORD_LLM_REVIEW` thresholds.
+
+## Security Scanning
+
+Before any content is written, `_scan_memory_content()` checks for:
+- **Invisible Unicode characters** (zero-width space, BOM, etc.) — blocks possible injection payloads
+- **Threat patterns** — regex patterns detecting prompt injection, system prompt exfiltration, or data leakage attempts
+
+Blocked entries are rejected with an error message and never reach disk.
+
+## Fact Cache & Conflict Detection
+
+- **Fact cache** (`.fact_cache.json`): After each write, `_update_fact_cache()` extracts subject-attribute-value triples from the content and stores them in a local cache.
+- **Conflict detection** (`_detect_fact_conflict()`): Before writing, the system checks if the new content contradicts a cached fact (same subject + attribute, different value). If a conflict is found, the `add()` response includes a `fact_conflict` field with old/new values for the agent to review.
+
+## Audit Logging
+
+Every sub-doc write is logged to `.audit.jsonl` (excluded from Git via `.gitignore`):
+- Timestamp, target (memory/user), routed doc name, keyword score, and the content hash
+- Used for debugging routing decisions and tracking memory growth patterns
 
 ## Async LLM Review
 

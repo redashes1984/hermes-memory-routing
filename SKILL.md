@@ -45,18 +45,46 @@ MEMORY.md (index, §-delimited, injected into system prompt)
 
 3. **Async LLM review (non-blocking):** For borderline cases (1-2 keyword matches), a background thread calls a lightweight LLM to reclassify. If the LLM disagrees with the keyword result, the entry is moved to the correct sub-doc.
 
+4. **Fallback classification (non-blocking):** For 0-match entries written to `fallback.md`, a separate background thread immediately tries LLM classification — if the LLM identifies a sub-doc, the entry is migrated on the spot.
+
 ### Code Flow
 
 ```
 memory_tool.add(target="memory", content=...)
-  → route_content_to_sub_doc(content)  # keyword scoring
-  → if score >= 1:
+  → _scan_memory_content(content)  # security check: block injection/invisible chars
+  → route_content_to_sub_doc(content)  # V2 keyword scoring (4 phases)
+  → if score >= 3:
       → _add_to_sub_doc(doc_name, content)  # atomic write
-      → if score < 3:
-          → threading.Thread(_async_llm_review, ...)  # non-blocking
-    → if score == 0:
-      → append to MEMORY.md (normal flow)
+      → _detect_fact_conflict(content)       # check against fact cache
+      → _update_fact_cache(content, doc_name)
+    → if 1-2 keywords:
+      → _add_to_sub_doc() + threading.Thread(_async_llm_review, ...)  # non-blocking
+    → if 0 keywords:
+      → _add_to_fallback(content)  # write to fallback.md (NOT MEMORY.md)
+      → threading.Thread(_fallback_classify, ...)  # immediate LLM classify
+  → _log_audit()  # record to .audit.jsonl
 ```
+
+### V2 Keyword Scoring (not a simple count)
+
+The V2 algorithm uses four phases:
+
+1. **Raw matching** — scan content against all keywords
+2. **Conflict resolution** — shared keywords go to the doc with the smallest keyword list; keyword weights by length (>= 3 chars = 2.0, >= 2 = 1.0, 1 char = 0.5)
+3. **Normalization** — divide by sqrt(total keywords) to prevent keyword-list "black holes"; apply specificity bonus via log1p formula
+4. **Decision** — normalized score >= 0.6 (confident), >= 0.3 (tentative), < 0.3 (no match → fallback)
+
+### Security Scanning
+
+Before any write, `_scan_memory_content()` blocks:
+- Invisible Unicode characters (zero-width space, BOM, etc.)
+- Prompt injection / exfiltration patterns
+
+### Fact Cache & Conflict Detection
+
+- `.fact_cache.json` stores subject-attribute-value triples extracted from written entries
+- `_detect_fact_conflict()` checks if new content contradicts cached facts — if so, `add()` returns a `fact_conflict` field with old/new values
+- `.audit.jsonl` logs every sub-doc write (timestamp, doc name, score) — excluded from Git
 
 ## Keyword Configuration
 
