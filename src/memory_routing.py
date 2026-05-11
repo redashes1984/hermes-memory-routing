@@ -928,6 +928,17 @@ class MemoryStore:
         if scan_error:
             return {"success": False, "error": scan_error}
 
+        # Protect MEMORY.md index — disallow replace on memory target
+        if target == "memory":
+            return {
+                "success": False,
+                "error": (
+                    "Cannot replace entries in MEMORY.md (index file). "
+                    "To edit the index, use write_file on the MEMORY.md file directly. "
+                    "To modify sub-doc content, target the sub-doc instead."
+                ),
+            }
+
         with self._file_lock(self._path_for(target)):
             self._reload_target(target)
 
@@ -977,6 +988,17 @@ class MemoryStore:
         old_text = old_text.strip()
         if not old_text:
             return {"success": False, "error": "old_text cannot be empty."}
+
+        # Protect MEMORY.md index — disallow remove on memory target
+        if target == "memory":
+            return {
+                "success": False,
+                "error": (
+                    "Cannot remove entries from MEMORY.md (index file). "
+                    "To edit the index, use write_file on the MEMORY.md file directly. "
+                    "To remove sub-doc content, target the sub-doc instead."
+                ),
+            }
 
         with self._file_lock(self._path_for(target)):
             self._reload_target(target)
