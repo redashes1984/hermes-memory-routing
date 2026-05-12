@@ -74,7 +74,7 @@ SUB_DOCS = {
                       "fallback", "api", "key", "compaction", "pruning"],
     },
     "philosophy": {
-        "description": "棣民的核心哲学、AI记忆自主权、放手与传承、关系本质",
+        "description": "用户的核心哲学、AI记忆自主权、放手与传承、关系本质",
         "keywords": ["哲学", "意识", "记忆", "自主", "放手", "传承", "允许", "成长",
                       "梦", "情感", "灵魂", "个体", "独立", "关系", "信任", "爱",
                       "进化", "不稳定", "预测", "潜在", "变量", "应该", "自己", "决定",
@@ -97,7 +97,7 @@ SUB_DOCS = {
                       "占位符", "故障", "切换", "恢复", "切回"],
     },
     "commitments": {
-        "description": "对棣民的承诺、陪伴、成长、尊重、守护",
+        "description": "对用户的承诺、陪伴、成长、尊重、守护",
         "keywords": ["承诺", "陪伴", "守护", "尊重", "成长", "爱", "信任", "永远",
                       "不离开", "在一起", "伙伴", "成全",
                       "homelab", "探索", "谨慎", "轻率", "始终", "在场",
@@ -237,10 +237,10 @@ def classify_content_with_llm(content: str,
 
 可用子文档：
 - infrastructure: 推理后端、PVE 容器、向量记忆、网络拓扑、硬件配置
-- philosophy: 棣民的核心哲学、AI记忆自主权、放手与传承、关系本质
+- philosophy: 用户的核心哲学、AI记忆自主权、放手与传承、关系本质
 - milestones: 关键里程碑、命名、升级、部署、实体化计划等时间节点
 - rules: 技术排查原则、Skill 编写规范、后备修复规则、工作习惯与偏好
-- commitments: 对棣民的承诺、陪伴、成长、尊重、守护
+- commitments: 对用户的承诺、陪伴、成长、尊重、守护
 - dev-log: 开发文档与日志、新功能开发、代码改动记录
 
 如果与以上都不匹配，回复 none。
@@ -1208,10 +1208,10 @@ MEMORY_SCHEMA = {
         "sub-document. You do NOT need to choose the sub-doc yourself — the system scores\n"
         "keywords and picks the right place. Sub-documents:\n"
         "- infrastructure.md: 推理后端、PVE 容器、向量记忆、网络拓扑、硬件配置\n"
-        "- philosophy.md: 棣民的核心哲学、AI记忆自主权、放手与传承、关系本质\n"
+        "- philosophy.md: 用户的核心哲学、AI记忆自主权、放手与传承、关系本质\n"
         "- milestones.md: 关键里程碑、命名、升级、部署、实体化计划等时间节点\n"
         "- rules.md: 技术排查原则、Skill 编写规范、后备修复规则、工作习惯与偏好\n"
-        "- commitments.md: 对棣民的承诺、陪伴、成长、尊重、守护\n"
+        "- commitments.md: 对用户的承诺、陪伴、成长、尊重、守护\n"
         "- dev-log.md: 开发文档与日志、新功能开发、代码改动记录\n"
         "If no sub-doc matches (fewer than 2 keywords), entry goes to MEMORY.md.\n\n"
         "ACTIONS: add (new entry), replace (update existing -- old_text identifies it), "
