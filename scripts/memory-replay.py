@@ -18,11 +18,26 @@ Key design decisions:
 
 import json
 import os
+from pathlib import Path
+
+# ─── MEMORY.md integrity guard ──────────────────────────────────────────
+# Prevent replay from running if MEMORY.md index is corrupted.
+
+def _check_memory_index_integrity():
+    """Verify MEMORY.md has required index sections before proceeding."""
+    md = MEMORY_DIR / "MEMORY.md"
+    if not md.exists():
+        return False, "MEMORY.md missing"
+    content = md.read_text(encoding="utf-8")
+    for section in ("## 核心身份", "## 记忆导航"):
+        if section not in content:
+            return False, f"MEMORY.md missing section: {section}"
+    return True, "OK"
+
 import re
 import sys
 import tempfile
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # Resolve hermes-agent install path (configurable via HERMES_AGENT_LIB)

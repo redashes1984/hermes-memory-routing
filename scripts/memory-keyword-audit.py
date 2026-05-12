@@ -84,11 +84,20 @@ def read_recent_audit() -> list:
 
 
 def full_audit() -> dict:
-    """Scan every bullet in every sub-doc, compute routing accuracy."""
+    """Scan every bullet in every sub-doc, compute routing accuracy.
+    
+    SKIP MEMORY.md — it's the top-level index file, not a sub-document.
+    Scanning it would incorrectly treat its navigation lines as memory entries
+    and route them to sub-docs, causing catastrophic overwrites.
+    (Incident: 2026-05-11/12)
+    """
     sub_dir = get_memory_sub_docs_dir()
     entries = []
     for fn in sorted(os.listdir(sub_dir)):
         if not fn.endswith(".md") or fn.startswith("."):
+            continue
+        # CRITICAL: Skip MEMORY.md — it's an index file, not a sub-doc
+        if fn in ("MEMORY.md", "USER.md", "MEMORY_TEMPLATE.md"):
             continue
         fp = sub_dir / fn
         with open(fp) as f:
@@ -240,6 +249,9 @@ def detect_black_hole() -> dict:
     for fn in sorted(os.listdir(sub_dir)):
         if not fn.endswith(".md") or fn.startswith("."):
             continue
+        # CRITICAL: Skip index files — they're not sub-docs
+        if fn in ("MEMORY.md", "USER.md", "MEMORY_TEMPLATE.md"):
+            continue
         with open(sub_dir / fn) as f:
             for match in re.finditer(r'^- (.+)$', f.read(), re.MULTILINE):
                 all_bullets.append((fn.replace('.md', ''), match.group(1)))
@@ -284,11 +296,101 @@ def patch_sub_docs_add(old_string: str, new_string: str) -> bool:
         return False
 
 
+def _validate_memory_md_integrity() -> tuple:
+    """Validate MEMORY.md index file integrity. Returns (is_valid, reason)."""
+    try:
+        mem_dir = get_memory_sub_docs_dir()
+        memory_path = mem_dir / "MEMORY.md"
+        if not memory_path.exists():
+            return False, "MEMORY.md 不存在"
+
+        content = memory_path.read_text(encoding="utf-8")
+        if len(content) < 500:
+            return False, f"文件过短 ({len(content)} chars)"
+        if len(content.strip().split("\n")) < 10:
+            return False, f"行数过少"
+
+        required = ["## 核心身份", "## 记忆导航"]
+        for section in required:
+            if section not in content:
+                return False, f"缺少必需章节: {section}"
+
+        # Check navigation table references
+        nav_docs = sum(1 for doc in SUB_DOCS.keys() if f"{doc}.md" in content)
+        if nav_docs < 5:
+            return False, f"导航表引用不足 ({nav_docs}/6)"
+
+        return True, "完整性检查通过"
+
+    except Exception as e:
+        return False, f"检查异常: {e}"
+
+
+def _create_memory_snapshot() -> str:
+    """Create a pre-write snapshot of MEMORY.md. Returns snapshot path."""
+    mem_dir = get_memory_sub_docs_dir()
+    memory_path = mem_dir / "MEMORY.md"
+    if not memory_path.exists():
+        return ""
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    snap_path = mem_dir / f".audit_snapshot_{ts}"
+    try:
+        import shutil
+        shutil.copy2(str(memory_path), str(snap_path))
+
+        # Keep only last 5 snapshots
+        snaps = sorted(mem_dir.glob(".audit_snapshot_*"))
+        for old in snaps[:-5]:
+            old.unlink()
+
+        return str(snap_path)
+    except Exception:
+        return ""
+
+
+def _recover_memory_from_snapshot() -> bool:
+    """Recover MEMORY.md from the most recent audit snapshot."""
+    mem_dir = get_memory_sub_docs_dir()
+    memory_path = mem_dir / "MEMORY.md"
+    snaps = sorted(mem_dir.glob(".audit_snapshot_*"))
+    if not snaps:
+        return False
+
+    latest = snaps[-1]
+    try:
+        import shutil
+        shutil.copy2(str(latest), str(memory_path))
+        return True
+    except Exception:
+        return False
+
+
 def run_optimization() -> str:
     """Main optimization loop. Returns a summary report string."""
     lines = ["🧠 记忆关键词自动优化报告"]
     lines.append(f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
+
+    # Pre-flight: Validate MEMORY.md integrity
+    is_valid, reason = _validate_memory_md_integrity()
+    if not is_valid:
+        lines.append(f"⚠️  MEMORY.md 完整性检查失败: {reason}")
+        recovered = _recover_memory_from_snapshot()
+        if recovered:
+            lines.append("✅ 已从快照恢复 MEMORY.md")
+            is_valid, reason = _validate_memory_md_integrity()
+            if is_valid:
+                lines.append("✅ 恢复后验证通过")
+        else:
+            lines.append("❌ 无可用快照，跳过本次优化")
+            return "\n".join(lines)
+
+    lines.append("✅ MEMORY.md 完整性检查通过")
+    lines.append("")
+
+    # Create snapshot before any writes
+    snapshot_path = _create_memory_snapshot()
 
     # Step 1: Baseline audit
     audit_before = full_audit()
