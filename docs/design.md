@@ -223,7 +223,7 @@ SUB_DOCS = {
 export HERMES_AGENT_LIB="/usr/local/lib/hermes-agent"
 
 # LLM classifier (optional — keyword routing works without it)
-export HERMES_MEMORY_CLASSIFIER_URL="http://10.10.4.81:11434/v1"
+export HERMES_MEMORY_CLASSIFIER_URL="http://localhost:11434/v1"
 export HERMES_MEMORY_CLASSIFIER_MODEL="Qwen3-4B"
 export HERMES_MEMORY_CLASSIFIER_TIMEOUT="30"
 ```
