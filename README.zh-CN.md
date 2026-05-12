@@ -117,7 +117,7 @@ MEMORY.md (§ 分隔的索引，注入系统提示)
 export HERMES_AGENT_LIB="/usr/local/lib/hermes-agent"
 
 # LLM 分类器接口（任意 OpenAI 兼容 API）
-export HERMES_MEMORY_CLASSIFIER_URL="http://10.10.4.81:11434/v1"
+export HERMES_MEMORY_CLASSIFIER_URL="http://localhost:11434/v1"
 export HERMES_MEMORY_CLASSIFIER_MODEL="Qwen3-4B"
 export HERMES_MEMORY_CLASSIFIER_TIMEOUT="30"
 ```
