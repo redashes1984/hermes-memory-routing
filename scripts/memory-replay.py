@@ -25,7 +25,13 @@ from pathlib import Path
 
 def _check_memory_index_integrity():
     """Verify MEMORY.md has required index sections before proceeding."""
-    md = MEMORY_DIR / "MEMORY.md"
+    # MEMORY.md is in memories/ (official directory), not memory/ (sub-docs)
+    try:
+        from tools.memory_tool import get_memory_dir
+    except Exception:
+        get_memory_dir = lambda: Path.home() / ".hermes" / "profiles" / "nova" / "memories"
+
+    md = get_memory_dir() / "MEMORY.md"
     if not md.exists():
         return False, "MEMORY.md missing"
     content = md.read_text(encoding="utf-8")
@@ -247,6 +253,11 @@ def replace_entries_in_doc(filename: str,
 
 def run_replay() -> str:
     """Main replay loop. Returns a summary report string."""
+    # P1-1 fix: check MEMORY.md integrity before proceeding
+    is_valid, reason = _check_memory_index_integrity()
+    if not is_valid:
+        return f"❌ MEMORY.md 完整性检查失败: {reason}"
+
     lines = ["🔄 记忆复盘报告"]
     lines.append(f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")

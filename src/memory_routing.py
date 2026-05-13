@@ -515,7 +515,9 @@ def _detect_fact_conflict(content: str) -> Optional[dict]:
     """
     try:
         import sys
-        sys.path.insert(0, str(get_memory_sub_docs_dir().parent / "scripts"))
+        _scripts_dir = str(get_memory_sub_docs_dir().parent / "scripts")
+        if _scripts_dir not in sys.path:
+            sys.path.insert(0, _scripts_dir)
         from fact_cache import detect_conflicts, update_fact_cache
         conflicts = detect_conflicts(content)
         if conflicts:
@@ -530,7 +532,9 @@ def _update_fact_cache(content: str, source_doc: str | None = None):
     """Update fact cache after writing new content."""
     try:
         import sys
-        sys.path.insert(0, str(get_memory_sub_docs_dir().parent / "scripts"))
+        _scripts_dir = str(get_memory_sub_docs_dir().parent / "scripts")
+        if _scripts_dir not in sys.path:
+            sys.path.insert(0, _scripts_dir)
         from fact_cache import update_fact_cache
         update_fact_cache(content, source_doc)
     except Exception:

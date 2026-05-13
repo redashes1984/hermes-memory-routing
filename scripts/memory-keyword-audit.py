@@ -319,6 +319,10 @@ def _validate_memory_md_integrity() -> tuple:
         if nav_docs < 5:
             return False, f"导航表引用不足 ({nav_docs}/6)"
 
+        # P2-3: check for "last updated" line
+        if "最后更新" not in content and "last updated" not in content.lower():
+            return False, "缺少'最后更新'行"
+
         return True, "完整性检查通过"
 
     except Exception as e:
@@ -338,10 +342,13 @@ def _create_memory_snapshot() -> str:
         import shutil
         shutil.copy2(str(memory_path), str(snap_path))
 
-        # Keep only last 5 snapshots
+        # Keep only last 5 snapshots (P2-2: non-fatal cleanup)
         snaps = sorted(mem_dir.glob(".audit_snapshot_*"))
         for old in snaps[:-5]:
-            old.unlink()
+            try:
+                old.unlink()
+            except OSError:
+                pass  # non-fatal cleanup error
 
         return str(snap_path)
     except Exception:
@@ -360,7 +367,9 @@ def _recover_memory_from_snapshot() -> bool:
     try:
         import shutil
         shutil.copy2(str(latest), str(memory_path))
-        return True
+        # P2-4: verify recovery succeeded
+        is_valid, _ = _validate_memory_md_integrity()
+        return is_valid
     except Exception:
         return False
 
@@ -390,6 +399,9 @@ def run_optimization() -> str:
 
     # Create snapshot before any writes
     snapshot_path = _create_memory_snapshot()
+    if not snapshot_path:
+        lines.append("⚠️  无法创建预写快照，跳过本次优化（安全策略）")
+        return "\n".join(lines)
 
     # Step 1: Baseline audit
     audit_before = full_audit()
