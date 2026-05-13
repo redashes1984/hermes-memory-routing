@@ -21,6 +21,8 @@ import os
 import re
 import sys
 import tempfile
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -85,7 +87,6 @@ def llm_merge(entries: List[str], target_doc: str) -> str | None:
 4. 只输出合并后的内容，不要其他文字"""
 
     try:
-        import urllib.request
         payload = json.dumps({
             "model": LLM_MODEL,
             "messages": [{"role": "user", "content": prompt}],

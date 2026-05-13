@@ -30,6 +30,8 @@ import os
 import re
 import tempfile
 import threading
+import urllib.error
+import urllib.request
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -245,12 +247,9 @@ def classify_content_with_llm(content: str,
 
 内容：{content}
 
-只回复文档名称，不要其他文字（{doc_options} 或 none）。"""
+|只回复文档名称，不要其他文字（{doc_options} 或 none）。"""
 
     try:
-        import urllib.request
-        import urllib.error
-
         payload = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
@@ -378,8 +377,6 @@ def _migrate_from_fallback(fallback_entry: str, target_doc: str):
     
     Uses file locks to prevent concurrent migration races.
     """
-    import fcntl as _fcntl
-    
     sub_dir = get_memory_sub_docs_dir()
     fallback_path = sub_dir / "fallback.md"
     target_path = sub_dir / f"{target_doc}.md"
@@ -388,7 +385,7 @@ def _migrate_from_fallback(fallback_entry: str, target_doc: str):
     # Acquire lock
     lock_fd = open(lock_path, "w")
     try:
-        _fcntl.flock(lock_fd, _fcntl.LOCK_EX)
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
     except Exception:
         lock_fd.close()
         return  # Can't acquire lock, skip
@@ -459,7 +456,7 @@ def _migrate_from_fallback(fallback_entry: str, target_doc: str):
                     pass
     finally:
         try:
-            _fcntl.flock(lock_fd, _fcntl.LOCK_UN)
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
         except Exception:
             pass
         lock_fd.close()
