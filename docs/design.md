@@ -13,28 +13,37 @@ The solution: split memory into an **always-loaded index** and **on-demand sub-d
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────┐
-│  System Prompt Injection                    │
-│                                             │
-│  MEMORY.md (index only, §-delimited)        │
-│  ┌─────────────────────────────────────┐    │
-│  │ Core identity + nav table           │    │
-│  │ (first § block, ~2200 chars max)    │    │
-│  └─────────────────────────────────────┘    │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  profiles/<name>/memories/   (Hermes official)           │
+│                                                           │
+│  System Prompt Injection (every session start)           │
+│  ┌─────────────────────────────────────────────────┐     │
+│  │ MEMORY.md (index only, §-delimited)             │     │
+│  │ ┌─────────────────────────────────────────────┐ │     │
+│  │ │ Core identity + nav table                   │ │     │
+│  │ │ (first § block, ~2200 chars max)            │ │     │
+│  │ └─────────────────────────────────────────────┘ │     │
+│  └─────────────────────────────────────────────────┘     │
+│  ┌─────────────────────────────────────────────────┐     │
+│  │ USER.md (user profile, §-delimited)             │     │
+│  └─────────────────────────────────────────────────┘     │
+└──────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────┐
-│  On-Demand Read (read_file tool)            │
-│                                             │
-│  memory/infrastructure.md                   │
-│  memory/philosophy.md                       │
-│  memory/milestones.md                       │
-│  memory/rules.md                            │
-│  memory/commitments.md                      │
-│  memory/dev-log.md                          │
-│                                             │
-│  (No char limit, pure markdown)             │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  profiles/<name>/memory/   (sub-documents, on-demand)    │
+│                                                           │
+│  On-Demand Read (read_file tool)                         │
+│  ┌─────────────────────────────────────────────────┐     │
+│  │ infrastructure.md  — infrastructure, hardware   │     │
+│  │ philosophy.md      — values, principles         │     │
+│  │ milestones.md      — key dates, versions        │     │
+│  │ rules.md           — conventions, standards     │     │
+│  │ commitments.md     — promises, long-term        │     │
+│  │ dev-log.md         — changelog, iterations      │     │
+│  │                                     ...         │     │
+│  │ (No char limit, pure markdown)                  │     │
+│  └─────────────────────────────────────────────────┘     │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## § Delimiter Mechanism

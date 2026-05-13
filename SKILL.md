@@ -18,17 +18,30 @@ Memory Routing solves the problem of unbounded, flat MEMORY.md files in Hermes A
 
 **Key insight:** MEMORY.md is an index injected into the system prompt. Sub-docs are read on-demand via `read_file`. This keeps system prompt overhead low while preserving full memory recall.
 
-## Architecture
+## Directory Structure
 
 ```
-MEMORY.md (index, §-delimited, injected into system prompt)
-├── memory/<doc1>.md   — infrastructure, deployment, hardware
-├── memory/<doc2>.md   — philosophy, values, principles
-├── memory/<doc3>.md   — milestones, version history
-├── memory/<doc4>.md   — rules, conventions, standards
-├── memory/<doc5>.md   — commitments, relationships
-└── memory/<doc6>.md   — development log, changelog
+~/.hermes/profiles/<profile>/
+├── memories/                  # Hermes official directory
+│   ├── MEMORY.md             — agent memory index (injected into system prompt)
+│   └── USER.md               — user profile (injected into system prompt)
+│
+└── memory/                    # Memory-routing sub-documents (read on-demand)
+    ├── infrastructure.md     — infrastructure, deployment, hardware
+    ├── philosophy.md         — values, principles, relationships
+    ├── milestones.md         — milestones, version history
+    ├── rules.md              — conventions, standards, workflows
+    ├── commitments.md        — commitments, relationships
+    ├── dev-log.md            — development log, changelog
+    ├── fallback.md           # 0-match entries (temporary holding area)
+    └── CREDENTIALS.md        — sensitive credentials (chmod 600)
 ```
+
+**Path Reference (Official):**
+- `~/.hermes/memories/` → MEMORY.md + USER.md (official index files, injected into system prompt)
+- `~/.hermes/memory/` → Sub-documents (memory routing extension, read on-demand via `read_file`)
+
+⚠️ **Do NOT swap these paths.** The official code returns `get_hermes_home() / "memories"` for the index files and `get_hermes_home() / "memory"` for sub-docs.
 
 **Sub-doc names are configured via `SUB_DOCS` — they are not hardcoded.** See "Adding a New Sub-Doc" below.
 

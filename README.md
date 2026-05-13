@@ -25,15 +25,23 @@ Hermes Agent injects MEMORY.md into the system prompt on every turn. With a flat
 Split memory into an **index** (MEMORY.md, always injected) and **sub-documents** (read on-demand):
 
 ```
-MEMORY.md (§-delimited index, injected into system prompt)
+profiles/<name>/
+├── memories/                    # Hermes official location
+│   ├── MEMORY.md               # Index (§-delimited, injected into system prompt)
+│   └── USER.md                 # User profile (injected into system prompt)
 │
-├── memory/infrastructure.md   — infrastructure, deployment, hardware
-├── memory/philosophy.md       — values, principles, relationships
-├── memory/milestones.md       — milestones, version history
-├── memory/rules.md            — conventions, standards, workflows
-├── memory/commitments.md      — commitments, long-term promises
-└── memory/dev-log.md          — changelog, iteration notes
+└── memory/                      # Sub-documents (read on-demand via read_file)
+    ├── infrastructure.md       — infrastructure, deployment, hardware
+    ├── philosophy.md           — values, principles, relationships
+    ├── milestones.md           — milestones, version history
+    ├── rules.md                — conventions, standards, workflows
+    ├── commitments.md          — commitments, long-term promises
+    └── dev-log.md              — changelog, iteration notes
 ```
+
+**Directory definitions:**
+- **`memories/`** — Hermes official directory for `MEMORY.md` (index) and `USER.md` (user profile). These are injected into the system prompt on every session start.
+- **`memory/`** — Sub-document storage for memory routing. Topic-specific files are read on-demand via `read_file`, keeping system prompt overhead low.
 
 Sub-doc names and keyword lists are **fully configurable** — no hardcoded categories.
 

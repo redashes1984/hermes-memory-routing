@@ -4,7 +4,31 @@ All notable changes to Hermes Memory Routing.
 
 ---
 
-## [unreleased] — Fallback Routing & Environment Decoupling
+## [unreleased]
+
+### Added
+
+- ...
+
+---
+
+## [2026-05-13] v1.0.2 — Directory Definitions & Documentation Update
+
+### Added
+
+- **Explicit `memories/` vs `memory/` directory definitions** — clarified the separation between Hermes official memory location and memory-routing sub-document storage:
+  - `memories/` — Hermes official directory for `MEMORY.md` (index) and `USER.md` (user profile), injected into system prompt
+  - `memory/` — Memory-routing sub-document storage, read on-demand via `read_file`
+
+### Changed
+
+- **README.md / README.zh-CN.md** — updated architecture diagrams and added directory definition section
+- **docs/design.md** — updated architecture overview to show both `memories/` and `memory/` directories with their roles
+- **Profile files synchronized** — copied all files from `memories/` to `memory/` (2026-05-01.md, COMPRESSION-ENDPOINT-MIGRATION.md, mcp-qdrant-deployment-log.md, vector-memory-config.md, MEMORY_TEMPLATE.md, qdrant-tls-config-20260425.json)
+
+---
+
+## [2026-05-12] v1.0.1-hotfix — Fallback Routing & Environment Decoupling
 
 ### Added
 
