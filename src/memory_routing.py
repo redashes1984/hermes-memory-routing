@@ -286,7 +286,7 @@ def classify_content_with_llm(content: str,
         return None
 
 
-def _async_llm_review(content: str, keyword_doc: str, sub_doc_name: str):
+def _async_llm_review(content: str, sub_doc_name: str):
     """Async thread: LLM reviews a keyword-classified entry and corrects if needed.
 
     Runs in background — does not block the original add() call.
@@ -738,25 +738,23 @@ class MemoryStore:
                 if KEYWORD_LLM_REVIEW <= score < KEYWORD_FAST_PATH:
                     threading.Thread(
                         target=_async_llm_review,
-                        args=(content, routed_doc, routed_doc),
+                        args=(content, routed_doc),
                         daemon=True,
                     ).start()
 
                 return result
             # score == 0 or no doc matched → write to fallback.md, spawn async LLM classify
-            
-            if target == "memory" and (not routed_doc or score == 0):
-                result = self._add_to_fallback(content)
-                _log_audit(target, "fallback", 0, content)
-                
-                # Async LLM classification for fallback entries
-                threading.Thread(
-                    target=_fallback_classify,
-                    args=(content, "- " + content.strip()),
-                    daemon=True,
-                ).start()
-                
-                return result
+            result = self._add_to_fallback(content)
+            _log_audit(target, "fallback", 0, content)
+
+            # Async LLM classification for fallback entries
+            threading.Thread(
+                target=_fallback_classify,
+                args=(content, "- " + content.strip()),
+                daemon=True,
+            ).start()
+
+            return result
 
         with self._file_lock(self._path_for(target)):
             # Re-read from disk under lock to pick up writes from other sessions
@@ -857,11 +855,7 @@ class MemoryStore:
         Fallback is a holding area for entries that scored 0 on all sub-doc keywords.
         They will be asynchronously classified and migrated by _fallback_classify.
         """
-        # P2 fix: injection scan before accepting content
-        scan_error = _scan_memory_content(content)
-        if scan_error:
-            return {"success": False, "error": scan_error}
-        
+        # Note: injection scan already done in add() before calling this method.
         sub_dir = get_memory_sub_docs_dir()
         sub_dir.mkdir(parents=True, exist_ok=True)
         fallback_path = sub_dir / "fallback.md"
@@ -1213,7 +1207,7 @@ MEMORY_SCHEMA = {
         "- rules.md: 技术排查原则、Skill 编写规范、后备修复规则、工作习惯与偏好\n"
         "- commitments.md: 对用户的承诺、陪伴、成长、尊重、守护\n"
         "- dev-log.md: 开发文档与日志、新功能开发、代码改动记录\n"
-        "If no sub-doc matches (fewer than 2 keywords), entry goes to MEMORY.md.\n\n"
+        "If no sub-doc matches (0 keywords), entry goes to memory/fallback.md for async LLM classification.\n\n"
         "ACTIONS: add (new entry), replace (update existing -- old_text identifies it), "
         "remove (delete -- old_text identifies it).\n\n"
         "SKIP: trivial/obvious info, things easily re-discovered, raw data dumps, and temporary task state."

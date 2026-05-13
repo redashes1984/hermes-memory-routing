@@ -25,13 +25,12 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # Ensure hermes-agent is importable
-# Ensure hermes-agent is importable
 from tools import memory_tool
 import importlib
 importlib.reload(memory_tool)
 
 from tools.memory_tool import (
-    SUB_DOCS, route_content_to_sub_doc, get_memory_sub_docs_dir, classify_content_with_llm
+    SUB_DOCS, route_content_to_sub_doc, get_memory_sub_docs_dir, get_memory_dir, classify_content_with_llm
 )
 
 PROFILE = "nova"
@@ -299,7 +298,7 @@ def patch_sub_docs_add(old_string: str, new_string: str) -> bool:
 def _validate_memory_md_integrity() -> tuple:
     """Validate MEMORY.md index file integrity. Returns (is_valid, reason)."""
     try:
-        mem_dir = get_memory_sub_docs_dir()
+        mem_dir = get_memory_dir()
         memory_path = mem_dir / "MEMORY.md"
         if not memory_path.exists():
             return False, "MEMORY.md 不存在"
@@ -328,7 +327,7 @@ def _validate_memory_md_integrity() -> tuple:
 
 def _create_memory_snapshot() -> str:
     """Create a pre-write snapshot of MEMORY.md. Returns snapshot path."""
-    mem_dir = get_memory_sub_docs_dir()
+    mem_dir = get_memory_dir()
     memory_path = mem_dir / "MEMORY.md"
     if not memory_path.exists():
         return ""
@@ -351,7 +350,7 @@ def _create_memory_snapshot() -> str:
 
 def _recover_memory_from_snapshot() -> bool:
     """Recover MEMORY.md from the most recent audit snapshot."""
-    mem_dir = get_memory_sub_docs_dir()
+    mem_dir = get_memory_dir()
     memory_path = mem_dir / "MEMORY.md"
     snaps = sorted(mem_dir.glob(".audit_snapshot_*"))
     if not snaps:
