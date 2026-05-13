@@ -17,6 +17,7 @@ Schedule: Weekdays 05-09, Weekends/Holidays 07-10 (Asia/Shanghai)
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import urllib.request
@@ -339,7 +340,6 @@ def _create_memory_snapshot() -> str:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     snap_path = mem_dir / f".audit_snapshot_{ts}"
     try:
-        import shutil
         shutil.copy2(str(memory_path), str(snap_path))
 
         # Keep only last 5 snapshots (P2-2: non-fatal cleanup)
@@ -365,7 +365,6 @@ def _recover_memory_from_snapshot() -> bool:
 
     latest = snaps[-1]
     try:
-        import shutil
         shutil.copy2(str(latest), str(memory_path))
         # P2-4: verify recovery succeeded
         is_valid, _ = _validate_memory_md_integrity()

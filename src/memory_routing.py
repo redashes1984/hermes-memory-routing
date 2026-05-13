@@ -25,10 +25,13 @@ Design:
 
 import json
 import logging
+import math
 import os
 import re
 import tempfile
+import threading
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from hermes_constants import get_hermes_home
 from typing import Dict, Any, List, Optional
@@ -124,7 +127,6 @@ def get_memory_sub_docs_dir() -> Path:
 # Sub-doc routing thresholds
 KEYWORD_FAST_PATH = 3   # ≥3 keywords: skip LLM, use keyword result directly
 KEYWORD_LLM_REVIEW = 1  # 1-2 keywords: use keyword as provisional, LLM async review
-KEYWORD_FALLBACK = 0    # 0 keywords: write MEMORY.md, no LLM
 
 
 def route_content_to_sub_doc(content: str) -> tuple:
@@ -140,7 +142,6 @@ def route_content_to_sub_doc(content: str) -> tuple:
     Returns (doc_name_or_None, effective_score) — effective_score is the raw match count
     for backward compatibility with callers that use it as a threshold.
     """
-    import math
     content_lower = content.lower()
 
     # Phase 1: compute raw matches per doc
@@ -203,14 +204,11 @@ def route_content_to_sub_doc(content: str) -> tuple:
             best_doc = doc_name
             best_raw = doc_final_scores[doc_name]
 
-    # Return raw match count for backward compatibility with threshold checks
-    # But use normalized score for decision
-    if best_norm >= 0.6:  # Adjusted: 0.6 for V2 normalized scores
+    # Return raw match count for backward compatibility with threshold checks.
+    # Normalized score >= 0.3 is the threshold for a valid routing decision.
+    if best_norm >= 0.3:
         return best_doc, int(best_raw)
-    elif best_norm >= 0.3:
-        return best_doc, int(best_raw)
-    else:
-        return None, 0
+    return None, 0
 
 
 def classify_content_with_llm(content: str,
@@ -467,12 +465,6 @@ def _migrate_from_fallback(fallback_entry: str, target_doc: str):
         lock_fd.close()
 
 
-# Import threading for async review
-import threading
-
-
-
-
 # ---------------------------------------------------------------------------
 # Audit trail — lightweight JSONL log for every memory write
 # Used by keyword auto-tuning cron job to detect low-score routing
@@ -490,7 +482,7 @@ def _log_audit(target: str, doc_name: str | None, score: int, content: str):
         sub_dir.mkdir(parents=True, exist_ok=True)
         trail = _audit_trail_path()
         entry = {
-            "ts": __import__("datetime").datetime.now().isoformat(),
+            "ts": datetime.now().isoformat(),
             "target": target,
             "doc": doc_name or "MEMORY.md",
             "score": score,
@@ -904,13 +896,9 @@ class MemoryStore:
         )
 
     def _append_index_to_memory_md(self, doc_name: str, content: str) -> None:
-        """Append a short index reference to MEMORY.md for sub-doc entries."""
-        # Keep MEMORY.md clean — only log the sub-doc write for discoverability
-        index_entry = f"[{doc_name}.md 已更新]"
-        path = self._path_for("memory")
-        # Don't write to MEMORY.md — sub-docs are self-indexed via MEMORY.md nav table
-        # This is a no-op by default; override in subclasses if needed
-        logger.debug("Sub-doc write: %s.md — no MEMORY.md index update needed", doc_name)
+        """No-op: sub-docs are self-indexed via MEMORY.md nav table.
+        Kept as hook for subclasses that need index tracking."""
+        logger.debug("Sub-doc write: %s.md", doc_name)
 
     def replace(self, target: str, old_text: str, new_content: str) -> Dict[str, Any]:
         """Find entry containing old_text substring, replace it with new_content."""

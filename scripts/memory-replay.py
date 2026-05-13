@@ -18,32 +18,11 @@ Key design decisions:
 
 import json
 import os
-from pathlib import Path
-
-# ─── MEMORY.md integrity guard ──────────────────────────────────────────
-# Prevent replay from running if MEMORY.md index is corrupted.
-
-def _check_memory_index_integrity():
-    """Verify MEMORY.md has required index sections before proceeding."""
-    # MEMORY.md is in memories/ (official directory), not memory/ (sub-docs)
-    try:
-        from tools.memory_tool import get_memory_dir
-    except Exception:
-        get_memory_dir = lambda: Path.home() / ".hermes" / "profiles" / "nova" / "memories"
-
-    md = get_memory_dir() / "MEMORY.md"
-    if not md.exists():
-        return False, "MEMORY.md missing"
-    content = md.read_text(encoding="utf-8")
-    for section in ("## 核心身份", "## 记忆导航"):
-        if section not in content:
-            return False, f"MEMORY.md missing section: {section}"
-    return True, "OK"
-
 import re
 import sys
 import tempfile
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # Resolve hermes-agent install path (configurable via HERMES_AGENT_LIB)
@@ -63,6 +42,26 @@ MEMORY_DIR = get_memory_sub_docs_dir()
 
 LLM_BASE_URL = os.environ.get("HERMES_MEMORY_CLASSIFIER_URL", "http://localhost:11434/v1")
 LLM_MODEL = os.environ.get("HERMES_MEMORY_CLASSIFIER_MODEL", "Qwen3-4B")
+
+# ─── MEMORY.md integrity guard ──────────────────────────────────────────
+
+def _check_memory_index_integrity():
+    """Verify MEMORY.md has required index sections before proceeding."""
+    try:
+        from tools.memory_tool import get_memory_dir
+    except Exception:
+        get_memory_dir = lambda: Path.home() / ".hermes" / "profiles" / "nova" / "memories"
+
+    md = get_memory_dir() / "MEMORY.md"
+    if not md.exists():
+        return False, "MEMORY.md missing"
+    content = md.read_text(encoding="utf-8")
+    for section in ("## 核心身份", "## 记忆导航"):
+        if section not in content:
+            return False, f"MEMORY.md missing section: {section}"
+    return True, "OK"
+
+
 LLM_TIMEOUT = int(os.environ.get("HERMES_MEMORY_CLASSIFIER_TIMEOUT", "30"))
 
 
@@ -253,7 +252,7 @@ def replace_entries_in_doc(filename: str,
 
 def run_replay() -> str:
     """Main replay loop. Returns a summary report string."""
-    # P1-1 fix: check MEMORY.md integrity before proceeding
+    # P1-1: check MEMORY.md integrity before proceeding
     is_valid, reason = _check_memory_index_integrity()
     if not is_valid:
         return f"❌ MEMORY.md 完整性检查失败: {reason}"
