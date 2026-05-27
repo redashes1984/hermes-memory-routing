@@ -1,0 +1,23 @@
+diff --git a/tools/memory_tool.py b/tools/memory_tool.py
+index 5b9af5592..5403eeef3 100644
+--- a/tools/memory_tool.py
++++ b/tools/memory_tool.py
+@@ -36,6 +36,8 @@ from typing import Dict, Any, List, Optional
+ 
+ from utils import atomic_replace
+ 
++from tools.memory_routing import route_memory_to_sub_docs
++
+ # fcntl is Unix-only; on Windows use msvcrt for file locking
+ msvcrt = None
+ try:
+@@ -343,6 +345,9 @@ class MemoryStore:
+             self._set_entries(target, entries)
+             self.save_to_disk(target)
+ 
++        # Sub-document routing (non-blocking side effect)
++        route_memory_to_sub_docs(target, content)
++
+         return self._success_response(target, "Entry added.")
+ 
+     def replace(self, target: str, old_text: str, new_content: str) -> Dict[str, Any]:
