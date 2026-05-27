@@ -26,9 +26,11 @@ Split memory into an **index** (MEMORY.md, always injected) and **sub-documents*
 
 ```
 profiles/<name>/
-├── memories/                    # Hermes official location
+├── memories/                    # Hermes official location (v0.14.0 §-delimited)
 │   ├── MEMORY.md               # Index (§-delimited, injected into system prompt)
-│   └── USER.md                 # User profile (injected into system prompt)
+│   ├── USER.md                 # User profile (injected into system prompt)
+│   ├── .audit.jsonl            # Routing audit trail
+│   └── .fact_cache.json        # Fact conflict cache
 │
 └── memory/                      # Sub-documents (read on-demand via read_file)
     ├── infrastructure.md       — infrastructure, deployment, hardware
@@ -45,35 +47,69 @@ profiles/<name>/
 
 Sub-doc names and keyword lists are **fully configurable** — no hardcoded categories.
 
-## Three-Stage Routing
+## Architecture (v0.14.0+)
+
+Memory routing is a **standalone module** injected via a **minimal 2-line patch** to the official `memory_tool.py`:
 
 ```
-User: memory_tool.add(target="memory", content="...")
+           ┌──────────────────────────────────────┐
+           │         memory(action="add", ...)     │
+           │         MemoryStore.add()             │
+           │            (official code)            │
+           └──────────────┬───────────────────────┘
+                          │
+                    2-line hook:
+                    import + call route_memory_to_sub_docs()
+                          │
+                          ▼
+           ┌──────────────────────────────────────┐
+           │  tools/memory_routing.py (standalone) │
+           │  ┌────────────────────────────────┐   │
+           │  │ route_content_to_sub_doc()     │   │
+           │  │  → V2 weighted keyword scoring │   │
+           │  │  → 6 sub-docs, 120+ keywords   │   │
+           │  └────────────┬───────────────────┘   │
+           │               │                        │
+           │         score ≥ 0.2?                   │
+           │         ┌────┴────┐                    │
+           │        Yes       No                    │
+           │         │        │                     │
+           │    ┌────▼──┐  audit-only              │
+           │    │ write │  (fallback)               │
+           │    │ to    │                           │
+           │    │ sub-  │                           │
+           │    │ doc   │                           │
+           │    └───────┘                           │
+           │  + audit trail (.audit.jsonl)          │
+           │  + fact cache (.fact_cache.json)       │
+           │  + conflict detection                  │
+           └──────────────────────────────────────────┘
+```
+
+## Three-Stage Routing (for reference — v0.14.0 uses simplified 0.2 threshold)
+
+```
+MemoryStore.add(target="memory", content="...")
           │
           ▼
-   ┌─────────────────┐
-   │  Keyword Scoring │  Each sub-doc has a keyword list.
-   │  (zero latency)  │  Content scanned → highest score wins.
-   └────────┬────────┘
-            │
-     score ≥ 3? ──Yes──▶ Write directly to sub-doc ✓
-            │
-           No
-            │
-      score ≥ 1? ──Yes──▶ Write to keyword result + async LLM review
-            │                 (background thread, non-blocking)
-           No
-            │
-        Write to memory/fallback.md (fallback)
+   route_memory_to_sub_docs(target, content)    ← 2-line hook
+          │
+          ▼
+   route_content_to_sub_doc(content)            ← keyword scoring
+          │
+    score ≥ 0.2? ──Yes──▶ Write to sub-doc ✓ + audit + fact cache
+          │
+         No
+          │
+       audit-only (no fallback write in v0.14.0 adapter)
 ```
 
-### Thresholds
+### Threshold
 
-| Threshold | Behavior | Latency |
-|-----------|----------|---------|
-| `>= 3` keyword matches | Fast path: direct write | Zero |
-| `1-2` keyword matches | Write + async LLM review | Milliseconds (LLM in background) |
-| `0` keyword matches | Write to `memory/fallback.md` | Zero |
+| Score | Behavior |
+|-------|----------|
+| `>= 0.2` | Write to sub-doc + audit + fact cache |
+| `< 0.2` | Audit-only (no sub-doc write, content still in MEMORY.md) |
 
 ### V2 Keyword Scoring Algorithm
 
@@ -82,7 +118,7 @@ Scoring is not a simple keyword count. It runs in four phases:
 1. **Raw matching** — scan content against all keywords in every sub-doc.
 2. **Conflict resolution & weighting** — shared keywords are awarded to the doc with the smallest keyword list; keyword weights by length: >= 3 chars = 2.0 (strong), >= 2 = 1.0 (medium), 1 char = 0.5 (weak).
 3. **Normalization & specificity bonus** — score = weighted / sqrt(total keywords) to prevent keyword-list "black holes"; a log1p-based specificity bonus rewards docs where matches represent a large fraction of their list.
-4. **Decision** — normalized score >= 0.6 (confident), >= 0.3 (tentative), < 0.3 (no match → fallback).
+4. **Decision** — normalized score >= 0.2 (write to sub-doc), < 0.2 (audit-only, content stays in MEMORY.md). Threshold lowered from 0.3 to handle single 2-char Chinese keyword matches (修复, 升级, 更新).
 
 Raw match count is also returned for backward compatibility with `KEYWORD_FAST_PATH` / `KEYWORD_LLM_REVIEW` thresholds.
 
@@ -118,7 +154,11 @@ Every sub-doc write is logged to `.audit.jsonl` (excluded from Git via `.gitigno
 - **Correction:** If LLM disagrees with keyword result, entry is moved
 - **Timeout:** 10 seconds (configurable) — on timeout, keyword result stands
 
-## Environment Variables
+## Environment Variables (v0.14.0 adapter — no LLM classifier needed)
+
+The v0.14.0 adapter uses keyword-only routing (no async LLM review). No environment variables required.
+
+For the legacy keyword-audit and replay scripts:
 
 ```bash
 # Hermes Agent library path (for scripts to import memory_tool)
@@ -139,9 +179,28 @@ export HERMES_MEMORY_CLASSIFIER_TIMEOUT="30"
 
 All variables are optional. Keyword routing (score >= 3) works without any of them. LLM review (score 1-2) requires `CLASSIFIER_URL` and `CLASSIFIER_MODEL`.
 
+## Re-applying After Hermes Update
+
+`hermes update` overwrites `memory_tool.py` (the 2-line hook). After any update:
+
+```bash
+# Step 1: Copy standalone module (never overwritten)
+cp /root/projects/hermes-memory-routing/src/memory_routing.py \
+   /usr/local/lib/hermes-agent/tools/memory_routing.py
+
+# Step 2: Re-apply the patch
+cd /usr/local/lib/hermes-agent
+patch -p1 < /root/projects/hermes-memory-routing/patches/memory-routing-v0.14.patch
+
+# Step 3: Restart Gateway
+systemctl restart hermes-gateway-nova
+```
+
+Verify: `grep -n "route_memory_to_sub_docs" tools/memory_tool.py` should show lines 40 and 350.
+
 ## Keyword Configuration
 
-Keywords live in `SUB_DOCS` dict inside `memory_tool.py`. Add new sub-docs by inserting a new key:
+Keywords live in `SUB_DOCS` dict inside `tools/memory_routing.py`. Add new sub-docs by inserting a new key:
 
 ```python
 SUB_DOCS = {

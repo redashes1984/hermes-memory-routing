@@ -4,6 +4,33 @@ All notable changes to Hermes Memory Routing.
 
 ---
 
+## [2026-05-28] v1.1.0 — Hermes Agent v0.14.0 Adaptation
+
+### Breaking Change
+
+Memory routing is now a **standalone module** (`tools/memory_routing.py`) injected via a **2-line hook** instead of being embedded directly in `memory_tool.py`. This prevents code loss on `hermes update`.
+
+**Migration:** The old embedded code was overwritten by v0.14.0. Re-deployment requires:
+1. Copy `src/memory_routing.py` → `/usr/local/lib/hermes-agent/tools/memory_routing.py`
+2. Apply `patches/memory-routing-v0.14.patch` to `memory_tool.py`
+3. Restart Gateway
+
+### Changed
+
+- **Rewritten `src/memory_routing.py`** — decoupled from `memory_tool.py`, now a clean 350-line standalone module
+- **Minimal patch paradigm** — only 2 lines added to official code: import + single function call
+- **Routing threshold lowered** from 0.3 → 0.2 to handle 2-char Chinese keywords (修复, 升级, 更新) which only get 1.0 weight after normalization
+- **README.md** — updated architecture diagram, added re-apply section, simplified three-stage routing docs
+- **`patches/memory-routing-v0.14.patch`** — proper git diff for easy re-application after `hermes update`
+- **`src/memory_tool_v0.14_with_patch.py`** — full patched file for reference
+
+### Removed
+
+- Async LLM review (score 1-2) — removed in v0.14.0 adapter, keyword result always stands
+- Fallback.md write (score 0) — score-0 entries are audit-only; content still saved in MEMORY.md
+
+---
+
 ## [unreleased]
 
 ### Added
