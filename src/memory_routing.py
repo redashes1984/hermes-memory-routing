@@ -190,7 +190,7 @@ def route_content_to_sub_doc(content: str) -> Tuple[Optional[str], int]:
     raw_count = sum(1 for kw in best_kws if kw.lower() in content_lower)
 
     # Final: only return if score >= minimum threshold
-    if best_score >= 0.3:
+    if best_score >= 0.2:
         return best_doc, raw_count
     return None, 0
 
