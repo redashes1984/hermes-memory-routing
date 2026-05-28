@@ -11,12 +11,15 @@ index 5b9af5592..5403eeef3 100644
  # fcntl is Unix-only; on Windows use msvcrt for file locking
  msvcrt = None
  try:
-@@ -343,6 +345,9 @@ class MemoryStore:
+@@ -343,8 +345,13 @@ class MemoryStore:
              self._set_entries(target, entries)
-             self.save_to_disk(target)
+-            self.save_to_disk(target)
  
-+        # Sub-document routing (non-blocking side effect)
-+        route_memory_to_sub_docs(target, content)
++            # Sub-document routing — route before writing to MEMORY.md
++            # If routed successfully (score >= 1), skip MEMORY.md to avoid duplication
++            skip_memory = route_memory_to_sub_docs(target, content)
++            if not skip_memory:
++                self.save_to_disk(target)
 +
          return self._success_response(target, "Entry added.")
  

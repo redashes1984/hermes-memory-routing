@@ -355,32 +355,35 @@ def _update_fact_cache(content: str, source_doc: Optional[str]):
 # Main entry point — called from MemoryStore.add()
 # ---------------------------------------------------------------------------
 
-def route_memory_to_sub_docs(target: str, content: str):
+def route_memory_to_sub_docs(target: str, content: str) -> bool:
     """
     Route a memory write to the appropriate sub-document.
 
-    Designed to be called as a non-blocking hook from MemoryStore.add()
-    after the official MEMORY.md write completes.
+    Designed to be called as a hook from MemoryStore.add() before
+    the official MEMORY.md write. If routing succeeds (score >= 1),
+    the caller should skip MEMORY.md to avoid duplication.
 
     Args:
-        target: "memory" or "user" (only "memory" triggers routing)
+        target: 'memory' or 'user' (only 'memory' triggers routing)
         content: The content being saved to memory
+
+    Returns:
+        True if content was routed to a sub-doc (score >= 1), False otherwise.
     """
     if target != "memory":
-        return  # Only route agent memory, not user profile
+        return False
 
     if not content or not content.strip():
-        return
+        return False
 
     # Classify
     doc_name, raw_score = route_content_to_sub_doc(content)
 
-    # Audit log
+    # Audit log (always, even on no-match)
     _log_audit(target, doc_name, raw_score, content)
 
     if doc_name is None or raw_score == 0:
-        # Score 0 — could go to fallback; for now, just audit
-        return
+        return False
 
     # Write to sub-doc
     _add_to_sub_doc(doc_name, content)
@@ -393,6 +396,8 @@ def route_memory_to_sub_docs(target: str, content: str):
             f"{conflict['attribute']}: {conflict['old_value']} → {conflict['new_value']}"
         )
     _update_fact_cache(content, doc_name)
+
+    return True
 
 
 # ---------------------------------------------------------------------------

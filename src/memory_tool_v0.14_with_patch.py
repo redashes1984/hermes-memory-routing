@@ -343,12 +343,14 @@ class MemoryStore:
 
             entries.append(content)
             self._set_entries(target, entries)
-            self.save_to_disk(target)
 
-        # Sub-document routing (non-blocking side effect)
-        route_memory_to_sub_docs(target, content)
+            # Sub-document routing — route before writing to MEMORY.md
+            # If routed successfully (score >= 1), skip MEMORY.md to avoid duplication
+            skip_memory = route_memory_to_sub_docs(target, content)
+            if not skip_memory:
+                self.save_to_disk(target)
 
-        return self._success_response(target, "Entry added.")
+            return self._success_response(target, "Entry added.")
 
     def replace(self, target: str, old_text: str, new_content: str) -> Dict[str, Any]:
         """Find entry containing old_text substring, replace it with new_content."""
