@@ -86,22 +86,25 @@ Memory routing is a **standalone module** injected via a **minimal 2-line patch*
            └──────────────────────────────────────────┘
 ```
 
-## Three-Stage Routing (for reference — v0.14.0 uses simplified 0.2 threshold)
+## Three-Stage Routing (v1.1.1 — route before save_to_disk)
 
 ```
 MemoryStore.add(target="memory", content="...")
           │
           ▼
-   route_memory_to_sub_docs(target, content)    ← 2-line hook
+   route_memory_to_sub_docs(target, content)    ← runs BEFORE save_to_disk
           │
           ▼
    route_content_to_sub_doc(content)            ← keyword scoring
           │
     score ≥ 0.2? ──Yes──▶ Write to sub-doc ✓ + audit + fact cache
-          │
-         No
-          │
-       audit-only (no fallback write in v0.14.0 adapter)
+          │                                        │
+         No                                        ▼
+          │                                   skip save_to_disk
+          ▼                                   (MEMORY.md stays clean)
+   save_to_disk(MEMORY.md)
+   (content stored as § entry only
+    when no sub-doc matches)
 ```
 
 ### Threshold

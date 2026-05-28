@@ -4,6 +4,19 @@ All notable changes to Hermes Memory Routing.
 
 ---
 
+## [2026-05-28] v1.1.1 — Fix: Prevent MEMORY.md Dual Write
+
+### Fixed
+
+- **Critical: `route_memory_to_sub_docs()` called AFTER `save_to_disk()`** — caused content to be written both to MEMORY.md (as `§` entries) and to sub-documents. Changed execution order: route runs FIRST, and if routing succeeds (score >= 1), MEMORY.md write is skipped entirely.
+- **`route_memory_to_sub_docs()` now returns `bool`** — `True` if routed to sub-doc, `False` otherwise. Caller (`memory_tool.py`) uses this to decide whether to call `save_to_disk()`.
+
+### Changed
+
+- **`src/memory_tool_v0.14_with_patch.py`** — routing hook moved before `save_to_disk()` with conditional skip
+- **`src/memory_routing.py`** — function signature updated: `-> bool` return type annotation
+- **`patches/memory-routing-v0.14.patch`** — updated to reflect new execution order
+
 ## [2026-05-28] v1.1.0 — Hermes Agent v0.14.0 Adaptation
 
 ### Breaking Change
