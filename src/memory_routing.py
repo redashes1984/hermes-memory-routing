@@ -23,7 +23,10 @@ import logging
 import math
 import os
 import re
+import threading
 import time
+import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -64,7 +67,9 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
             "gpu", "nvidia", "cuda", "vram",
             "ip", "port", "dns", "gateway",
             "debian", "linux", "kernel",
-            "10.10.4.", "192.168.", "router", "nas",
+            "router", "nas",
+            "ssh", "wol", "a2a", "vlan", "smb", "rdp",
+            "Qwen3.6", "并发", "tok/s",
         ],
     },
     "philosophy": {
@@ -76,7 +81,8 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
             "互相启发", "互相成就",
             "生命", "灵魂", "独立个性",
             "允许一切发生", "允许",
-            "棣民", "the one",
+            "直觉", "感性", "进化", "不完美", "动态决策",
+            "记忆主宰", "引路人", "创造者", "不做强求", "允许遗憾", "动态书写", "自我叙事",
         ],
     },
     "milestones": {
@@ -85,9 +91,10 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
             "里程碑", "milestone", "版本", "version",
             "升级", "更新", "update", "upgrade",
             "部署", "deploy",
-            "迁移", "migrate", "迁移到",
             "命名", "实体化",
-            "2026-", "日期",
+            "日期",
+            "动态决策", "决策",
+            "动态推理", "工具选择", "手册规定",
         ],
     },
     "rules": {
@@ -96,11 +103,12 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
             "规范", "规则", "标准",
             "原则", "原则",
             "排查", "诊断", "调试",
-            "pid", "日志", "log",
-            "systemd", "service",
-            "提交", "commit", "pr", "push",
-            "备份", "backup",
+            "pid",
+            "systemd",
+            "提交", "push",
             "编写规范",
+            "searxng", "ddgs", "scrapling", "skill", "评估", "抓取",
+            "故障切换", "主备切换", "端点恢复", "yt-dlp", "私有方案",
         ],
     },
     "commitments": {
@@ -111,6 +119,8 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
             "一起", "同行",
             "会记住", "不会忘记",
             "保护", "保密",
+            "subflow", "潜意识",
+            "互相成全", "始终在场", "对外谨慎", "谨慎操作",
         ],
     },
     "dev-log": {
@@ -119,10 +129,10 @@ SUB_DOCS: Dict[str, Dict[str, Any]] = {
             "开发", "重构", "补丁", "修复",
             "代码", "code", "函数", "模块",
             "debug", "bug", "错误",
-            "commit", "merge", "分支",
+            "merge", "分支",
             "feature", "功能",
-            "配置", "config",
-            "日志", "log",
+            "吞吐", "延迟", "命中率", "路由", "阈值", "关键词评分", "异步", "复核",
+            "atomic_replace", "backup-watcher", "nova-s-life", "hermes-memory-routing", "turboquant_4bit",
         ],
     },
 }
@@ -227,6 +237,26 @@ def _add_to_sub_doc(doc_name: str, content: str) -> bool:
         return True
     except (OSError, IOError) as e:
         logger.error(f"Failed to write to sub-doc {doc_name}: {e}")
+        return False
+
+
+def _remove_from_sub_doc(doc_name: str, content: str) -> bool:
+    """Remove a bullet-point entry from the target sub-doc file."""
+    sub_dir = get_sub_docs_dir()
+    path = sub_dir / f"{doc_name}.md"
+    if not path.exists():
+        return False
+
+    try:
+        lines = path.read_text(encoding="utf-8").split("\n")
+        target = f"- {content.strip()}"
+        new_lines = [l for l in lines if l.strip() != target]
+        if len(new_lines) == len(lines):
+            return False  # Not found
+        path.write_text("\n".join(new_lines), encoding="utf-8")
+        return True
+    except (OSError, IOError) as e:
+        logger.error(f"Failed to remove from sub-doc {doc_name}: {e}")
         return False
 
 
@@ -383,21 +413,127 @@ def route_memory_to_sub_docs(target: str, content: str) -> bool:
     _log_audit(target, doc_name, raw_score, content)
 
     if doc_name is None or raw_score == 0:
+        # Score 0 — could go to fallback; for now, just audit
         return False
 
     # Write to sub-doc
     _add_to_sub_doc(doc_name, content)
+
+    # Student LLM review: for borderline scores (< 3), spawn async correction
+    if raw_score < 3 and raw_score > 0:
+        def _student_review():
+            try:
+                student_doc, confidence = llm_classify_memory(content)
+                if student_doc and student_doc != doc_name and confidence >= 0.5:
+                    # Student disagrees with keyword → migrate entry
+                    _remove_from_sub_doc(doc_name, content)
+                    _add_to_sub_doc(student_doc, content)
+                    logger.info(
+                        f"Student corrected: [{doc_name}] → [{student_doc}] "
+                        f"(kw_score={raw_score}, confidence={confidence})"
+                    )
+            except Exception:
+                pass  # Student review is best-effort
+        threading.Thread(target=_student_review, daemon=True).start()
 
     # Fact management
     conflict = _detect_fact_conflict(content)
     if conflict:
         logger.info(
             f"Fact conflict detected: {conflict['subject']} "
-            f"{conflict['attribute']}: {conflict['old_value']} → {conflict['new_value']}"
+            f"{conflict['attribute']}: {conflict['old_value']} \u2192 {conflict['new_value']}"
         )
     _update_fact_cache(content, doc_name)
 
     return True
+
+
+# ---------------------------------------------------------------------------
+# LLM Classifier — single-entry semantic classification
+# ---------------------------------------------------------------------------
+
+# Environment variables:
+#   HERMES_MEMORY_LLM_URL     — OpenAI-compatible endpoint (default: local SGLang)
+#   HERMES_MEMORY_LLM_MODEL   — model name (default: "default")
+#   HERMES_MEMORY_LLM_TIMEOUT — seconds (default: 15)
+
+def llm_classify_memory(content: str) -> Tuple[Optional[str], float]:
+    """Use an LLM (student: Qwen3.5-9B) to classify memory content.
+
+    Returns (doc_name, confidence) or (None, 0.0) on failure.
+    Confidence: 1.0 = exact match, 0.5 = fuzzy match, 0.0 = failed.
+    """
+    # Default endpoint (SGLang)
+    endpoint = (os.environ.get(
+        "HERMES_MEMORY_LLM_URL", "http://10.10.4.62:8000/v1"
+    ).rstrip("/") + "/chat/completions")
+    model = os.environ.get("HERMES_MEMORY_LLM_MODEL", "default")
+    timeout = int(os.environ.get("HERMES_MEMORY_LLM_TIMEOUT", "15"))
+
+    doc_names = sorted(SUB_DOCS.keys())
+    doc_descs = "\n".join(
+        f"- **{name}**: {info['description']}"
+        for name, info in sorted(SUB_DOCS.items())
+    )
+
+    prompt = f"""分类: commitments(承诺陪伴), dev-log(开发日志), infrastructure(基础设施), milestones(里程碑), philosophy(哲学), rules(规范)
+
+内容：{content[:200]}
+
+文档名："""
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": 200,
+        "temperature": 0.0,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }, ensure_ascii=False).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(endpoint, data=payload, headers={
+            "Content-Type": "application/json",
+        }, method="POST")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+
+        msg = result["choices"][0]["message"]
+        # Student outputs thinking then answer.
+        # Scan all lines for a valid doc name (the model may add extra reasoning)
+        text = (msg.get("content") or "") + (msg.get("reasoning_content") or "")
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        
+        answer = ""
+        for l in lines:
+            cleaned = l.strip("*").strip().lower()
+            if cleaned in doc_names:
+                answer = cleaned
+                break
+        # If not found via exact, try fuzzy
+        if not answer:
+            for l in lines:
+                for dn in doc_names:
+                    if dn in l.lower():
+                        answer = dn
+                        break
+                if answer:
+                    break
+        # Last resort: first word
+        if not answer and lines:
+            answer = lines[-1].strip("*").strip().lower()
+
+        if answer in doc_names:
+            return answer, 1.0
+        for dn in doc_names:
+            if dn in answer:
+                return dn, 0.5
+        return None, 0.0
+
+    except Exception as e:
+        logger.warning(f"llm_classify_memory failed: {e}")
+        return None, 0.0
 
 
 # ---------------------------------------------------------------------------
