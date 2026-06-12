@@ -4,7 +4,33 @@ All notable changes to Hermes Memory Routing.
 
 ---
 
-## [2026-05-28] v1.1.1 — Fix: Prevent MEMORY.md Dual Write
+## [2026-06-12] v1.2.0 — Student-Teacher Self-Evolution
+
+### Added
+
+- **`llm_classify_memory()`** — student classifier function in `memory_routing.py`. Uses Qwen3.5-4B-Pure GGUF on llama.cpp Docker (10.10.4.62:8000, A3000 GPU). 24% correction rate on score<3 misroutes. Passes `chat_template_kwargs: {"enable_thinking": False}` for direct output (no internal thinking).
+- **`_remove_from_sub_doc()`** — removes a specific bullet-point entry from a sub-doc file. Enables entry migration when student corrects a keyword misroute.
+- **Async student review** — `route_memory_to_sub_docs()` spawns a daemon thread on score<3 entries. Student reclassifies: if disagreees, migrates via remove+add.
+- **`teacher_audit.py`** (`scripts/teacher_audit.py`) — periodic audit module using Qwen3.6-27B-FP8 on vLLM (10.10.4.8:8000). 63% classification accuracy. Produces DEL/ADD/NOTE keyword suggestions.
+- **Self-evolution loop** — maintenance cron (every 60min) runs teacher audit → parses keyword suggestions → auto-applies changes to `memory_routing.py` → saves state to `.teacher-state.json`.
+- **`_student_review()`** inner function — non-blocking async correction in the write path.
+- **`chat_template_kwargs` support** — both `llm_classify_memory()` and `teacher_audit.py` pass `"chat_template_kwargs": {"enable_thinking": False}` to API calls. Tested and confirmed working on both llama.cpp Docker and vLLM.
+- **Chinese→English doc name mapping** in teacher script — teacher may respond in Chinese (基础设施, 哲学), script maps to English doc names.
+
+### Changed
+
+- **`SUB_DOCS` keywords tuned** — from 130 to 157 keywords across 6 sub-docs. Overbroad keywords removed: `pr`, `10.10.4.`, `192.168.`, `service` (from rules), `commit` (from rules), `备份`/`backup`, `日志`/`log` (from rules), `棣民` (from philosophy), `2026-`, `迁移` (from milestones). Keywords added from zero-score entries using LLM-guided suggestions: `subflow`, `潜意识`, `ssh`, `wol`, `a2a`, `吞吐`, `延迟`, `吞吐`, `路由`, `阈值`, `直觉`, `感性`, `进化`, etc.
+- **Keyword accuracy**: 31% → 47.8% (baseline → after tuning). Student (4B) adds 24% correction, architecture projects ~52% effective accuracy.
+- **`llm_classify_memory()` response parsing** — now scans all response lines for a valid doc name (handles model explanations like "**分类**: infrastructure(基础设施)"). Previously only checked last line.
+- **Default student endpoint** changed from `http://10.10.4.9:8000/v1` (9B SGLang) to `http://10.10.4.62:8000/v1` (4B llama.cpp).
+- **`src/memory_tool_v0.14_with_patch.py`** — re-synced with production patched version (the 2-line hook was lost during a `hermes update` and has been restored).
+- **README.ch.md** — updated architecture diagram with student-teacher flow.
+
+### Fixed
+
+- **`memory_tool.py` 2-line patch went missing** — the `from tools.memory_routing import route_memory_to_sub_docs` import and `route_memory_to_sub_docs(target, content)` hook call were dropped from the production file, likely by a `hermes update`. Restored and verified. Any Gateway restart will re-enable routing.
+
+### Removed
 
 ### Fixed
 

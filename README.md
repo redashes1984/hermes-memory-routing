@@ -107,6 +107,60 @@ MemoryStore.add(target="memory", content="...")
     when no sub-doc matches)
 ```
 
+### Student-Teacher Self-Evolution (v1.2.0 — implemented 2026-06-12)
+
+Keyword routing alone decays over time (31% accuracy after 6 weeks). A self-healing architecture was added:
+
+```
+              Write path (every memory add)
+              ┌─────────────────────────────────────┐
+              │  keyword scoring → score ≥ 0.2?     │
+              │       │                     │        │
+              │     Yes                    No        │
+              │       │                     │        │
+              │  write to sub-doc      audit-only   │
+              │       │                             │
+              │  score < 3?                        │
+              │       │                             │
+              │  ┌────▼─────┐                       │
+              │  │ Student  │  ← Qwen3.5-4B         │
+              │  │ (async)  │    llama.cpp A3000    │
+              │  │ 24% fix  │    0.7s, free         │
+              │  └────┬─────┘                       │
+              │       │                             │
+              │   disagree → migrate entry          │
+              └───────┴─────────────────────────────┘
+              
+              Maintenance cron (every 60 min)
+              ┌─────────────────────────────────────┐
+              │  Teacher audit (Qwen3.6-27B vLLM)   │
+              │  → sample 30 entries → reclassify   │
+              │  → find errors → analyze patterns   │
+              │       │                              │
+              │  DEL overbroad keywords              │
+              │  ADD covering keywords               │
+              │  NOTE systematic issues              │
+              │       │                              │
+              │  auto-apply changes to               │
+              │  memory_routing.py SUB_DOCS          │
+              │       │                              │
+              │  save state → .teacher-state.json    │
+              │  update skill → pitfalls             │
+              └─────────────────────────────────────┘
+```
+
+**Student model:** Qwen3.5-4B-Pure GGUF on llama.cpp Docker at 10.10.4.62:8000 (Unraid, A3000 GPU). 24% correction on low-score misroutes. Uses `chat_template_kwargs: {"enable_thinking": False}` for direct output.
+
+**Teacher model:** Qwen3.6-27B-FP8 on vLLM at 10.10.4.8:8000. 63% classification accuracy. Periodic sampling + systematic error analysis.
+
+**Self-evolution data:**
+
+| Component | Accuracy | Cost | Latency |
+|-----------|----------|------|---------|
+| Keyword routing | 47.8% | 0 | <1ms |
+| Student (4B llama.cpp) | +24% correction | free | 0.7s |
+| Teacher (27B vLLM) | 63% (sample) | free | 0.5s |
+
 ### Threshold
 
 | Score | Behavior |
