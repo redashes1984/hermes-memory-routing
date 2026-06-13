@@ -4,6 +4,37 @@ All notable changes to Hermes Memory Routing.
 
 ---
 
+## [2026-06-14] v1.3.0 — Maintenance Script Fix & Safety Guards
+
+### Fixed
+
+- **`memory-maintenance.py` import path** — changed `tools.memory_tool` to `tools.memory_routing`. The old module path stopped working after Hermes Agent upgrade; `SUB_DOCS`, `route_content_to_sub_doc`, and `llm_classify_memory` all live in `tools.memory_routing` now.
+- **`check_integrity()` path** — was checking `memory/MEMORY.md` (sub-doc dir) but the official `MEMORY.md` lives in `memories/`. Now correctly checks `memories/MEMORY.md` and validates sub-doc directory structure separately.
+- **`main()` silent failure** — early return on integrity failure used `return "\n".join(lines)` without printing. Now calls `print()` before returning so the report is always visible.
+- **LLM endpoint mismatch** — script used `HERMES_MEMORY_CLASSIFIER_URL` (pointed to 10.10.4.81:11434, unreachable). Now uses `HERMES_MEMORY_LLM_URL` (10.10.4.62:8000) to match `memory_routing.py`'s `llm_classify_memory()` default.
+- **`llm_call()` encoding** — added `.decode("utf-8")` for `resp.read()` and `ensure_ascii=False` for JSON encoding. Added `chat_template_kwargs: {"enable_thinking": False}` to match server config.
+- **`llm_merge()` output corruption** — LLM sometimes appended extra text like `。- 棣民说：...` which merged into the next bullet line. Added post-processing: strip leading `- `, split at `。-` if present. Also tightened prompt to forbid multi-line output.
+- **`patch_file()` format mismatch** — `repr()` produced Python single quotes (`['a', 'b']`) but `memory_routing.py` uses double quotes (`["a", "b"]`). Replaced with `patch_keywords()` that does line-by-line parsing and writes the exact multiline format.
+- **`patch_keywords()` doc detection bug** — `"description":` and `"keywords":` lines matched the "top-level key" check and reset `in_target_doc` prematurely. Removed the aggressive check; now only `},` resets the flag.
+- **`full_audit()` skip list** — added `CREDENTIALS.md` to skip set so credential entries are not audited.
+- **`recover_from_snapshot()` path** — now correctly restores `MEMORY.md` to `memories/` dir and sub-docs to `memory/` dir separately.
+
+### Added
+
+- **`create_snapshot()` multi-file support** — snapshots now capture official `MEMORY.md` AND all sub-docs into a `.maintenance_snapshot_<ts>/` directory. Previous versions only copied one file.
+- **LLM call counter & limit** — `_llm_call_count` tracks calls; `LLM_CALL_LIMIT` (default 100) prevents runaway runs. Excess calls are silently skipped instead of timing out.
+- **Misrouted processing limit** — `max_misrouted_to_process = LLM_CALL_LIMIT // 2` ensures only a fraction of misrouted entries consume LLM budget, leaving room for zero-score keyword extraction.
+- **Keyword removal safety guard** — each doc can lose at most 30% of its keywords per run. Excess removals are trimmed by frequency (most commonly suggested kept first). Reports a warning when trimmed.
+- **`llm_extract_keywords()` quality filter** — rejects keywords longer than 8 chars, containing commas or spaces. Prompt explicitly forbids phrases and sentences.
+- **`llm_suggest_remove()` safety prompt** — added instruction: "不要移除核心基础设施词汇（如 gpu, nvidia, vllm, ip, port, docker 等）".
+- **`memory-maintenance.sh`** — shell wrapper with time window and idle detection (copied from nova scripts).
+- **`fact_cache.py`** — fact extraction helper (copied from nova scripts).
+
+### Changed
+
+- **Memory directory split** — `MEMORY_DIR` (sub-docs, `memory/`) and `MEMORIES_DIR` (official, `memories/`) are now clearly separated throughout the script. `AUDIT_FILE` is read from `memories/` to match where `memory_routing.py` writes audit logs.
+- **Import failure behavior** — instead of silently falling back to empty `SUB_DOCS = {}`, the script now exits with `sys.exit(1)` and prints a fatal error.
+
 ## [2026-06-12] v1.2.0 — Student-Teacher Self-Evolution
 
 ### Added
