@@ -572,21 +572,8 @@ def run_keyword_opt(report_lines: List[str], audit_before: dict) -> bool:
         added[doc] = list(dict.fromkeys(kw for kw in added[doc] if kw not in existing))
     for doc in removed:
         removed[doc] = list(set(removed[doc]))
-        # Safety: never remove more than 30% of existing keywords for a doc
-        original_count = len(SUB_DOCS[doc]["keywords"])
-        max_removal = max(1, int(original_count * 0.3))
-        if len(removed[doc]) > max_removal:
-            # Keep only the first N suggestions (most frequently suggested)
-            from collections import Counter
-            freq = Counter(removed[doc])
-            kept = []
-            for kw, cnt in freq.most_common():
-                if len(kept) < max_removal:
-                    kept.append(kw)
-            removed[doc] = kept
-            report_lines.append(f"  ⚠️  {doc}: 删除数超限，从 {original_count} 中限制最多删除 {max_removal} 个")
 
-    # Apply patches
+    # Apply patches — additions only (removal disabled: LLM is unreliable at judging which keywords to delete)
     for doc, kws in added.items():
         if not kws:
             continue
@@ -597,15 +584,11 @@ def run_keyword_opt(report_lines: List[str], audit_before: dict) -> bool:
             report_lines.append(f"  ✅ {doc}: +{len(kws)} 关键词: {', '.join(kws)}")
             changes = True
 
+    # Report removal suggestions but do NOT apply them
     for doc, kws in removed.items():
         if not kws:
             continue
-        existing = list(SUB_DOCS[doc]["keywords"])
-        new = [kw for kw in existing if kw not in kws]
-        if patch_keywords(doc, new):
-            SUB_DOCS[doc]["keywords"] = new  # Update in-memory copy
-            report_lines.append(f"  🗑️  {doc}: -{len(kws)} 关键词: {', '.join(kws)}")
-            changes = True
+        report_lines.append(f"  💡 {doc}: 建议审查 {len(kws)} 个关键词（未自动删除，需要人工确认）: {', '.join(kws[:5])}...")
 
     return changes
 
