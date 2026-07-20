@@ -47,44 +47,66 @@ profiles/<name>/
 
 Sub-doc names and keyword lists are **fully configurable** — no hardcoded categories.
 
-## Architecture (v0.14.0+)
+## Architecture (v2.0.0 — LLM Intent Classifier)
 
-Memory routing is a **standalone module** injected via a **minimal 2-line patch** to the official `memory_tool.py`:
+Memory routing v2 uses an **MCP server** with LLM intent classification — no patches to Hermes source code required:
 
 ```
-           ┌──────────────────────────────────────┐
-           │         memory(action="add", ...)     │
-           │         MemoryStore.add()             │
-           │            (official code)            │
-           └──────────────┬───────────────────────┘
-                          │
-                    2-line hook:
-                    import + call route_memory_to_sub_docs()
-                          │
-                          ▼
-           ┌──────────────────────────────────────┐
-           │  tools/memory_routing.py (standalone) │
-           │  ┌────────────────────────────────┐   │
-           │  │ route_content_to_sub_doc()     │   │
-           │  │  → V2 weighted keyword scoring │   │
-           │  │  → 6 sub-docs, 120+ keywords   │   │
-           │  └────────────┬───────────────────┘   │
-           │               │                        │
-           │         score ≥ 0.2?                   │
-           │         ┌────┴────┐                    │
-           │        Yes       No                    │
-           │         │        │                     │
-           │    ┌────▼──┐  audit-only              │
-           │    │ write │  (fallback)               │
-           │    │ to    │                           │
-           │    │ sub-  │                           │
-           │    │ doc   │                           │
-           │    └───────┘                           │
-           │  + audit trail (.audit.jsonl)          │
-           │  + fact cache (.fact_cache.json)       │
-           │  + conflict detection                  │
-           └──────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  route_and_save_memory(content)  ← MCP tool              │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  intent_classifier.py                              │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ LLM: Qwen3.5-9B-AWQ → 5 categories          │  │  │
+│  │  │ {credential, infrastructure, tech-ref,       │  │  │
+│  │  │  dev-log, miscellaneous}                     │  │  │
+│  │  │ → JSON: {category, confidence, reason}       │  │  │
+│  │  └────────────────┬─────────────────────────────┘  │  │
+│  │                   │                                 │  │
+│  │         LLM fail/timeout?                            │  │
+│  │         ┌────┴────┐                                  │  │
+│  │       Online    Fallback (keyword)                   │  │
+│  │         │        (3 retries, configurable timeout)   │  │
+│  │    ┌────▼────┐                                       │  │
+│  │    │subdoc   │  → tempfile+os.rename (atomic)       │  │
+│  │    │writer   │  → fcntl.flock (concurrent safe)     │  │
+│  │    │(atomic) │                                       │  │
+│  │    └────┬────┘                                       │  │
+│  └─────────┼───────────────────────────────────────────┘  │
+│            │                                              │
+│            ▼                                              │
+│  MEMORY.md index updated                                  │
+└──────────────────────────────────────────────────────────┘
 ```
+
+**Key differences from v1.x:**
+- **No source patches** — runs as standalone MCP server, registered via `mcp.json`
+- **LLM classification** — 93% accuracy, replaces keyword scoring
+- **Atomic writes** — `tempfile + os.rename` + `fcntl.flock`, no data loss on concurrent writes
+- **Configurable timeouts** — `HERMES_LLM_TIMEOUT`, `HERMES_MEMORY_SLOW_THRESHOLD`, `HERMES_LLM_RETRY_COUNT`
+- **Input sanitization** — null bytes stripped, category validated, prompt injection mitigated
+
+## Configuration
+
+| Environment Variable | Default | Description |
+|---|---|---|
+| `HERMES_LLM_BASE_URL` | `http://10.10.4.9:8000/v1` | LLM endpoint |
+| `HERMES_LLM_MODEL` | `Qwen3.5-9B-AWQ` | Classification model |
+| `HERMES_LLM_TIMEOUT` | `5` | LLM call timeout (seconds) |
+| `HERMES_MEMORY_SLOW_THRESHOLD` | `10` | Slow-response threshold (seconds) |
+| `HERMES_LLM_RETRY_COUNT` | `2` | Max retry attempts on timeout |
+
+## Testing (v2.0.0)
+
+| Test | Result |
+|---|---|
+| Offline prompt validation (40 cases) | 40/40 ✅ |
+| Online LLM classification (30 cases) | 27/30 (93%) ✅ |
+| Fallback simulation (14 cases) | 14/14 ✅ |
+| End-to-end routing (5 categories) | 5/5 ✅ |
+| Cron cleanup pipeline | ✅ |
+
+## Architecture (v1.x — legacy)
 
 ## Three-Stage Routing (v1.1.1 — route before save_to_disk)
 

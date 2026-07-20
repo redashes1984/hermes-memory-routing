@@ -413,8 +413,10 @@ def route_memory_to_sub_docs(target: str, content: str) -> bool:
     _log_audit(target, doc_name, raw_score, content)
 
     if doc_name is None or raw_score == 0:
-        # Score 0 — could go to fallback; for now, just audit
-        return False
+        # Fallback: write to dev-log, non-blocking
+        logger.info(f"Fallback → dev-log: keyword score 0 for: {content[:80]}")
+        _add_to_sub_doc("dev-log", content)
+        return True
 
     # Write to sub-doc
     _add_to_sub_doc(doc_name, content)
@@ -424,7 +426,15 @@ def route_memory_to_sub_docs(target: str, content: str) -> bool:
         def _student_review():
             try:
                 student_doc, confidence = llm_classify_memory(content)
-                if student_doc and student_doc != doc_name and confidence >= 0.5:
+                if confidence < 0.5:
+                    # Low confidence → migrate to dev-log
+                    _remove_from_sub_doc(doc_name, content)
+                    _add_to_sub_doc("dev-log", content)
+                    logger.info(
+                        f"Student fallback → dev-log: [{doc_name}] "
+                        f"(kw_score={raw_score}, confidence={confidence})"
+                    )
+                elif student_doc and student_doc != doc_name:
                     # Student disagrees with keyword → migrate entry
                     _remove_from_sub_doc(doc_name, content)
                     _add_to_sub_doc(student_doc, content)
@@ -460,21 +470,18 @@ def route_memory_to_sub_docs(target: str, content: str) -> bool:
 def llm_classify_memory(content: str) -> Tuple[Optional[str], float]:
     """Use an LLM (student: Qwen3.5-9B) to classify memory content.
 
-    Returns (doc_name, confidence) or (None, 0.0) on failure.
-    Confidence: 1.0 = exact match, 0.5 = fuzzy match, 0.0 = failed.
+    Returns (doc_name, confidence) or ("dev-log", 0.0) on fallback.
+    Confidence: 1.0 = exact match, 0.5 = fuzzy match, 0.0 = fallback.
+    Fallback to dev-log on: timeout (>5s), endpoint unreachable, JSON parse failure.
     """
     # Default endpoint (SGLang)
     endpoint = (os.environ.get(
         "HERMES_MEMORY_LLM_URL", "http://10.10.4.62:8000/v1"
     ).rstrip("/") + "/chat/completions")
     model = os.environ.get("HERMES_MEMORY_LLM_MODEL", "default")
-    timeout = int(os.environ.get("HERMES_MEMORY_LLM_TIMEOUT", "15"))
+    timeout = int(os.environ.get("HERMES_MEMORY_LLM_TIMEOUT", "5"))
 
     doc_names = sorted(SUB_DOCS.keys())
-    doc_descs = "\n".join(
-        f"- **{name}**: {info['description']}"
-        for name, info in sorted(SUB_DOCS.items())
-    )
 
     prompt = f"""分类: commitments(承诺陪伴), dev-log(开发日志), infrastructure(基础设施), milestones(里程碑), philosophy(哲学), rules(规范)
 
@@ -492,48 +499,67 @@ def llm_classify_memory(content: str) -> Tuple[Optional[str], float]:
         "chat_template_kwargs": {"enable_thinking": False},
     }, ensure_ascii=False).encode("utf-8")
 
+    start = time.monotonic()
     try:
         req = urllib.request.Request(endpoint, data=payload, headers={
             "Content-Type": "application/json",
         }, method="POST")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-
-        msg = result["choices"][0]["message"]
-        # Student outputs thinking then answer.
-        # Scan all lines for a valid doc name (the model may add extra reasoning)
-        text = (msg.get("content") or "") + (msg.get("reasoning_content") or "")
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
-        
-        answer = ""
-        for l in lines:
-            cleaned = l.strip("*").strip().lower()
-            if cleaned in doc_names:
-                answer = cleaned
-                break
-        # If not found via exact, try fuzzy
-        if not answer:
-            for l in lines:
-                for dn in doc_names:
-                    if dn in l.lower():
-                        answer = dn
-                        break
-                if answer:
-                    break
-        # Last resort: first word
-        if not answer and lines:
-            answer = lines[-1].strip("*").strip().lower()
-
-        if answer in doc_names:
-            return answer, 1.0
-        for dn in doc_names:
-            if dn in answer:
-                return dn, 0.5
-        return None, 0.0
-
+            raw = resp.read().decode("utf-8")
+    except urllib.error.URLError as e:
+        elapsed = time.monotonic() - start
+        reason = str(e.reason)
+        if isinstance(e.reason, TimeoutError) or "timed out" in reason.lower() or "timeout" in reason.lower():
+            logger.warning(f"LLM fallback → dev-log: timeout ({elapsed:.1f}s > {timeout}s)")
+        else:
+            logger.warning(f"LLM fallback → dev-log: endpoint unreachable ({reason})")
+        return "dev-log", 0.0
     except Exception as e:
-        logger.warning(f"llm_classify_memory failed: {e}")
-        return None, 0.0
+        logger.warning(f"LLM fallback → dev-log: request error ({e})")
+        return "dev-log", 0.0
+
+    elapsed = time.monotonic() - start
+    if elapsed > 5.0:
+        logger.warning(f"LLM fallback → dev-log: slow response ({elapsed:.1f}s > 5s)")
+        return "dev-log", 0.0
+
+    try:
+        result = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"LLM fallback → dev-log: JSON parse failure ({e})")
+        return "dev-log", 0.0
+
+    msg = result["choices"][0]["message"]
+    # Student outputs thinking then answer.
+    # Scan all lines for a valid doc name (the model may add extra reasoning)
+    text = (msg.get("content") or "") + (msg.get("reasoning_content") or "")
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+    answer = ""
+    for l in lines:
+        cleaned = l.strip("*").strip().lower()
+        if cleaned in doc_names:
+            answer = cleaned
+            break
+    # If not found via exact, try fuzzy
+    if not answer:
+        for l in lines:
+            for dn in doc_names:
+                if dn in l.lower():
+                    answer = dn
+                    break
+            if answer:
+                break
+    # Last resort: first word
+    if not answer and lines:
+        answer = lines[-1].strip("*").strip().lower()
+
+    if answer in doc_names:
+        return answer, 1.0
+    for dn in doc_names:
+        if dn in answer:
+            return dn, 0.5
+    return None, 0.0
 
 
 # ---------------------------------------------------------------------------
