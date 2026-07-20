@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Memory Routing MCP Server for Hermes Agent Nova
+Memory Routing MCP Server for Hermes Agent Nova v2.0.0
 
 Tools: route_and_save_memory
 
 Accepts content, classifies intent via LLM, routes to the correct
 sub-document under memories/, and updates MEMORY.md index entries.
 """
+
+__version__ = "2.0.0"
 
 import fcntl
 import os
@@ -29,11 +31,12 @@ logger = logging.getLogger(__name__)
 NOVA_PROFILE = os.path.join(os.path.expanduser("~"), ".hermes", "profiles", "nova")
 MEMORIES_DIR = os.path.join(NOVA_PROFILE, "memories")
 MEMORY_MD = os.path.join(MEMORIES_DIR, "MEMORY.md")
+ROUTING_LOG = os.path.join(MEMORIES_DIR, "routing.log")
 
-# LLM config
+# LLM config — use Qwen3.5-9B-AWQ on 10.10.4.9 (lightweight classifier)
 LLM_PROVIDER = os.environ.get("HERMES_LLM_PROVIDER", "custom")
-LLM_MODEL = os.environ.get("HERMES_LLM_MODEL", "Qwen3.6-27B-FP8")
-LLM_BASE_URL = os.environ.get("HERMES_LLM_BASE_URL", "http://10.10.4.8:8000/v1")
+LLM_MODEL = os.environ.get("HERMES_LLM_MODEL", "Qwen3.5-9B-AWQ")
+LLM_BASE_URL = os.environ.get("HERMES_LLM_BASE_URL", "http://10.10.4.9:8000/v1")
 LLM_API_KEY = os.environ.get("HERMES_LLM_API_KEY", "VLLM")
 LLM_TIMEOUT = int(os.environ.get("HERMES_LLM_TIMEOUT", "5"))
 
@@ -46,8 +49,20 @@ ROUTING_CATEGORIES = {
     "miscellaneous": "miscellaneous.md",
 }
 
+# Category alias map — intent_classifier.py uses hyphenated names
+CATEGORY_ALIAS = {
+    "credentials": "credential",
+    "dev-log": "devlog",
+    "tech-ref": "techref",
+    "infrastructure": "infrastructure",
+    "miscellaneous": "miscellaneous",
+}
+
 # Create MCP server
 mcp = FastMCP("memory-routing")
+
+# Global state for logging
+_last_classify_method = "unknown"
 
 
 # ── LLM Intent Classifier ──────────────────────────────────────────
@@ -64,7 +79,12 @@ CLASSIFICATION_SYSTEM = """你是一个记忆分类器。将用户发送的内�
 
 
 def classify_intent(content: str) -> str:
-    """Classify content into a routing category using the LLM."""
+    """Classify content into a routing category using the LLM.
+
+    Returns the category and sets global _last_classify_method for logging.
+    """
+    global _last_classify_method
+    _last_classify_method = "llm"
     try:
         resp = requests.post(
             f"{LLM_BASE_URL}/chat/completions",
@@ -76,23 +96,30 @@ def classify_intent(content: str) -> str:
                 ],
                 "temperature": 0.0,
                 "max_tokens": 10,
+                "reasoning_effort": "none",  # Disable thinking for fast classification
             },
             headers={"Authorization": f"Bearer {LLM_API_KEY}"},
             timeout=LLM_TIMEOUT,
         )
         resp.raise_for_status()
         data = resp.json()
-        category = data["choices"][0]["message"]["content"].strip().lower()
+        msg = data["choices"][0]["message"]
+        # Thinking models put output in reasoning_content when content is None
+        category = (msg.get("content") or msg.get("reasoning_content") or "").strip().lower()
     except requests.exceptions.Timeout:
+        _last_classify_method = "keyword_fallback"
         logger.warning("LLM classify fallback: timeout (%ds)", LLM_TIMEOUT)
         return keyword_classify(content)
     except requests.exceptions.ConnectionError as e:
+        _last_classify_method = "keyword_fallback"
         logger.warning("LLM classify fallback: connection error (%s)", e)
         return keyword_classify(content)
     except (json.JSONDecodeError, KeyError, IndexError) as e:
+        _last_classify_method = "keyword_fallback"
         logger.warning("LLM classify fallback: JSON/response parse error (%s)", e)
         return keyword_classify(content)
     except Exception as e:
+        _last_classify_method = "keyword_fallback"
         logger.warning("LLM classify fallback: unexpected error (%s)", e)
         return keyword_classify(content)
 
@@ -100,6 +127,7 @@ def classify_intent(content: str) -> str:
     for cat in ROUTING_CATEGORIES:
         if cat in category:
             return cat
+    _last_classify_method = "keyword_fallback"
     return "miscellaneous"
 
 
@@ -127,6 +155,23 @@ def keyword_classify(content: str) -> str:
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
+
+def _write_routing_log(category: str, filename: str, summary: str, method: str, elapsed: float, detail: str = ""):
+    """Append a routing log entry to routing.log under memories/.
+
+    Format: timestamp | category | file | method | elapsed | summary | detail
+    One line per entry, easy to grep and tail.
+    """
+    try:
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        summary_safe = summary.replace("\n", " ").replace("|", "\\|")[:100]
+        detail_safe = detail.replace("\n", " ")[:200]
+        log_line = f"{timestamp} | {category} | {filename} | {method} | {elapsed:.2f}s | {summary_safe} | {detail_safe}\n"
+        with open(ROUTING_LOG, "a", encoding="utf-8") as f:
+            f.write(log_line)
+    except Exception as e:
+        logger.warning("Failed to write routing log: %s", e)
+
 
 def sanitize_summary(text: str) -> str:
     """Strip markdown special chars from a summary string."""
@@ -306,11 +351,21 @@ def route_and_save_memory(
     # Strip null bytes from content before processing
     content = strip_null_bytes(content)
 
+    start_time = time.monotonic()
+
     # Step 1: Classify intent
     if category and category in ROUTING_CATEGORIES:
         chosen_category = category
+        classify_method = "override"
+    elif category and category in CATEGORY_ALIAS:
+        # Accept hyphenated names from intent_classifier
+        chosen_category = CATEGORY_ALIAS[category]
+        classify_method = "alias"
     else:
         chosen_category = classify_intent(content)
+        classify_method = "llm" if chosen_category != "miscellaneous" else "keyword_fallback"
+
+    classify_elapsed = time.monotonic() - start_time
 
     result["category"] = chosen_category
 
@@ -344,6 +399,17 @@ def route_and_save_memory(
     # Step 4: Update MEMORY.md index
     update_memory_index(chosen_category, filename, entry_summary)
     result["index_updated"] = True
+
+    # Step 5: Write routing log
+    total_elapsed = time.monotonic() - start_time
+    _write_routing_log(
+        category=chosen_category,
+        filename=filename,
+        summary=entry_summary,
+        method=classify_method,
+        elapsed=total_elapsed,
+        detail=f"classify={classify_elapsed:.2f}s",
+    )
 
     return json.dumps(result, ensure_ascii=False, indent=2)
 

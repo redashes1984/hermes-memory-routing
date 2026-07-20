@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""LLM 意图分类器 — 将记忆内容分类到 5 个子文档类别。
+"""LLM 意图分类器 — 将记忆内容分类到 5 个子文档类别。 v2.0.0
 
 调用 Qwen3.5-9B-AWQ @ 10.10.4.9:8000，temperature=0.1，response_format=json_object。
 Prompt 定义 5 个分类及 definition + 正例 + 反例。
 返回 JSON: {category, confidence, reason}。
 Fallback: confidence < 0.5 或 JSON 解析失败 → 默认 dev-log。
 """
+
+__version__ = "2.0.0"
 
 import json
 import logging
