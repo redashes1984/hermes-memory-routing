@@ -45,125 +45,68 @@ profiles/<name>/
 
 子文档名称和关键词列表**完全可配置**——没有硬编码分类。
 
-## 三级路由机制
+## 架构（v2.0.0 — LLM 意图分类）
+
+Memory routing v2 使用 **MCP server** 配合 LLM 意图分类——无需修改 Hermes 源码：
 
 ```
-用户: memory_tool.add(target="memory", content="...")
-          │
-          ▼
-   ┌─────────────────┐
-   │   关键词评分      │  每个子文档有一组关键词。
-   │ （零延迟）       │  扫描内容 → 最高分获胜。
-   └────────┬────────┘
-            │
-    分数 >= 3？── 是 ──▶ 直接写入子文档 ✓
-            │
-           否
-            │
-     分数 >= 1？── 是 ──▶ 写入子文档 + 异步 LLM 复核
-            │                （后台线程，不阻塞）
-           否
-            │
-        写入 fallback.md（后备）
+┌──────────────────────────────────────────────────────────┐
+│  route_and_save_memory(content)  ← MCP 工具              │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  intent_classifier.py                              │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ LLM: Qwen3.5-9B-AWQ → 5 个分类              │  │  │
+│  │  │ {credential, infrastructure, tech-ref,       │  │  │
+│  │  │  dev-log, miscellaneous}                     │  │  │
+│  │  │ → JSON: {category, confidence, reason}       │  │  │
+│  │  └────────────────┬─────────────────────────────┘  │  │
+│  │                   │                                 │  │
+│  │         LLM 失败/超时？                               │  │
+│  │         ┌────┴────┐                                  │  │
+│  │       在线分类  关键词回退                            │  │
+│  │         │     （最多 3 次重试，超时可配置）          │  │
+│  │    ┌────▼────┐                                       │  │
+│  │    │subdoc   │  → tempfile+os.rename（原子写入）     │  │
+│  │    │writer   │  → fcntl.flock（并发安全）           │  │
+│  │    │(原子)   │                                       │  │
+│  │    └────┬────┘                                       │  │
+│  └─────────┼───────────────────────────────────────────┘  │
+│            │                                              │
+│            ▼                                              │
+│  MEMORY.md 索引更新                                        │
+└──────────────────────────────────────────────────────────┘
 ```
 
-### 阈值说明
+**与 v1.x 的核心区别：**
+- **无需源码补丁** — 作为独立 MCP server 运行，通过 `mcp.json` 注册
+- **LLM 分类** — 93% 准确率，替代关键词评分
+- **原子写入** — `tempfile + os.rename` + `fcntl.flock`，并发写入无数据丢失
+- **超时可配置** — `HERMES_LLM_TIMEOUT`、`HERMES_MEMORY_SLOW_THRESHOLD`、`HERMES_LLM_RETRY_COUNT`
+- **输入清洗** — 删除 null byte、category 白名单校验、prompt injection 防御
 
-| 阈值 | 行为 | 延迟 |
-|------|------|------|
-| `>= 3` 个关键词匹配 | 快速路径：直接写入子文档 | 零 |
-| `1-2` 个关键词匹配 | 写入子文档 + 异步 LLM 复核 | 毫秒级（LLM 在后台） |
-| `0` 个关键词匹配 | 写入 `memory/fallback.md` | 零 |
+## 配置
 
-### V2 关键词评分算法
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `HERMES_LLM_BASE_URL` | `http://10.10.4.9:8000/v1` | LLM 端点 |
+| `HERMES_LLM_MODEL` | `Qwen3.5-9B-AWQ` | 分类模型 |
+| `HERMES_LLM_TIMEOUT` | `5` | LLM 调用超时（秒） |
+| `HERMES_MEMORY_SLOW_THRESHOLD` | `10` | 慢响应阈值（秒） |
+| `HERMES_LLM_RETRY_COUNT` | `2` | 超时最大重试次数 |
 
-评分不是简单的关键词计数，而是四阶段算法：
+## 测试（v2.0.0）
 
-1. **原始匹配** — 扫描内容对比所有子文档的关键词列表。
-2. **冲突解决与加权** — 共享关键词（出现在多个子文档中）归到关键词列表最短的文档；关键词按长度加权：>= 3 字符 = 2.0（强），>= 2 = 1.0（中），1 字符 = 0.5（弱）。
-3. **归一化与特异性加分** — 评分 = 加权分 / sqrt(总关键词数)，防止关键词列表"黑洞"；通过 log1p 公式给予特异性加分，奖励命中关键词占列表比例高的文档。
-4. **决策** — 归一化评分 >= 0.6（置信），>= 0.3（暂定），< 0.3（无匹配 → 后备路由）。
+| 测试 | 结果 |
+|---|---|
+| 离线 prompt 验证（40 条） | 40/40 ✅ |
+| 在线 LLM 分类（30 条） | 27/30（93%）✅ |
+| Fallback 模拟（14 条） | 14/14 ✅ |
+| 端到端路由（5 个分类） | 5/5 ✅ |
+| Cron 清理流水线 | ✅ |
 
-同时返回原始匹配计数，用于兼容 `KEYWORD_FAST_PATH` / `KEYWORD_LLM_REVIEW` 阈值。
+## v1.x 架构（旧版）
 
-### 安全扫描
-
-每次写入前，`_scan_memory_content()` 会拦截：
-- **不可见 Unicode 字符**（零宽空格、BOM 等）— 防止注入 payload
-- **威胁模式** — 正则检测 prompt injection、系统提示泄露、数据外泄企图
-
-被拦截的条目会返回错误，不会写入磁盘。
-
-### 事实缓存与冲突检测
-
-- **事实缓存**（`.fact_cache.json`）：每次写入后，`_update_fact_cache()` 提取"主题-属性-值"三元组存入缓存。
-- **冲突检测**（`_detect_fact_conflict()`）：写入前检查新内容是否与缓存事实矛盾（相同主题 + 属性，不同值）。若发现冲突，`add()` 返回 `fact_conflict` 字段，包含旧值和新值供 Agent 审查。
-
-### 审计日志
-
-每次子文档写入都会记录到 `.audit.jsonl`（通过 `.gitignore` 排除在 Git 之外）：
-- 时间戳、目标（memory/user）、路由到的文档名、关键词评分
-- 用于调试路由决策和追踪记忆增长模式
-
-### 后备路由（Fallback）
-
-- 0 匹配的条目写入 `memory/fallback.md`，不污染 MEMORY.md 索引
-- 空闲复盘时，fallback.md 中的条目会被重新评分：匹配的移入正确子文档，不匹配的作为导航条目提升回 MEMORY.md
-- 关键词审计脚本会扫描 fallback.md，建议缺失的关键词
-
-### 异步 LLM 复核
-
-- **模型：** 任意 OpenAI 兼容接口（可配置）
-- **模式：** 后台守护线程，绝不阻塞主流程
-- **修正：** 如果 LLM 与关键词结果不一致，条目会被移动
-- **超时：** 30 秒（可配置）——超时则以关键词结果为准
-
-## 环境变量
-
-```bash
-# Hermes Agent 库路径（脚本导入 memory_tool 用）
-export HERMES_AGENT_LIB="/usr/local/lib/hermes-agent"
-
-# LLM 分类器接口（任意 OpenAI 兼容 API）
-export HERMES_MEMORY_CLASSIFIER_URL="http://localhost:11434/v1"
-export HERMES_MEMORY_CLASSIFIER_MODEL="Qwen3-4B"
-export HERMES_MEMORY_CLASSIFIER_TIMEOUT="30"
-```
-
-| 变量 | 必填 | 默认值 | 说明 |
-|------|------|--------|------|
-| `HERMES_AGENT_LIB` | 否 | `/usr/local/lib/hermes-agent` | Hermes Agent `tools/` 目录路径 |
-| `HERMES_MEMORY_CLASSIFIER_URL` | 否 | `http://localhost:11434/v1` | LLM 分类器接口（OpenAI 兼容） |
-| `HERMES_MEMORY_CLASSIFIER_MODEL` | 否 | `your-model` | 异步 LLM 复核使用的模型名 |
-| `HERMES_MEMORY_CLASSIFIER_TIMEOUT` | 否 | `30` | 分类器超时时间（秒） |
-
-所有变量均为可选。关键词路由（分数 >= 3）无需任何变量即可工作。LLM 复核（分数 1-2）需要 `CLASSIFIER_URL` 和 `CLASSIFIER_MODEL`。
-
-## 关键词配置
-
-关键词定义在 `memory_tool.py` 的 `SUB_DOCS` 字典中。添加新子文档只需插入一个新键：
-
-```python
-SUB_DOCS = {
-    "<文档名>": {
-        "description": "该子文档存储什么内容",
-        "keywords": ["关键词1", "关键词2", "关键词3", ...],
-    },
-}
-```
-
-### 调优指南
-
-- **具体优于宽泛。** `"vllm"` 比 `"model"` 更好的关键词。
-- **避免跨子文档重叠。** 共享关键词会导致所有匹配文档分数虚高。
-- **每份文档从 5-10 个关键词开始**，根据误分类情况逐步迭代。
-
-## 文件写入策略
-
-| 文件 | 格式 | 写入方式 | 去重 |
-|------|------|---------|------|
-| MEMORY.md | `§` 分隔 | 加锁追加 | 精确匹配 |
-| 子文档 | 纯 Markdown | 原子写入（临时文件 + 重命名） | 精确匹配 |
+三级路由机制：关键词评分 → 异步 LLM 复核 → 后备路由。关键词路由（分数 >= 3）零延迟；LLM 复核在后台运行，不阻塞主流程。
 
 ## 设计原则
 
