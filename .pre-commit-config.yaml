@@ -1,0 +1,46 @@
+# Pre-commit hooks for hermes-memory-routing
+# Enforces: import ordering, unused imports/variables, code formatting, modern Python syntax
+# Install: pre-commit install  (requires pre-commit >= 3.0)
+# Run manually: pre-commit run --all-files
+
+default_language_version:
+  python: python3
+
+repos:
+  # 1. Import sorting — all imports must be at top of file
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black", "--filter-files"]
+
+  # 2. Code formatting — eliminates style debates
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        args: ["--line-length", "120"]
+
+  # 3. Lint — catches unused imports (F401), unused variables (F841), duplicate keys (E401)
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        args: ["--select", "F401,F811,F841,E401,E501,E9,F631,F7", "--max-line-length", "120"]
+
+  # 4. Upgrade outdated syntax (__import__ → normal import, etc.)
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.19.0
+    hooks:
+      - id: pyupgrade
+        args: ["--py310-plus"]
+
+  # 5. Remove trailing whitespace and ensure newline at EOF
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict

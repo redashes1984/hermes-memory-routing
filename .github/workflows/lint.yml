@@ -1,0 +1,45 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install isort black flake8 pyupgrade
+
+      - name: Check import ordering (isort)
+        run: |
+          isort --profile black --filter-files --check --diff \
+            src/ scripts/ --extension py
+
+      - name: Check formatting (black)
+        run: |
+          black --line-length 120 --check --diff \
+            src/ scripts/
+
+      - name: Lint (flake8 — unused imports/variables)
+        run: |
+          flake8 --select F401,F811,F841,E401,E501,E9,F631,F7 \
+            --max-line-length 120 \
+            src/ scripts/
+
+      - name: Check Python syntax upgrades (pyupgrade)
+        run: |
+          pyupgrade --py310-plus --diff \
+            src/ scripts/

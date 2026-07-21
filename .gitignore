@@ -1,0 +1,16 @@
+# Runtime generated files
+memory/fallback.md
+memory/.audit.jsonl
+memory/.keyword-audit-state.json
+memory/.fact_cache.json
+memory/.fallback.lock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
