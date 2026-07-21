@@ -57,13 +57,17 @@ fi
 # ─── Step 1: Clone or update repo ──────────────────────────────────────────
 if [ -d "${PLUGIN_DIR}" ]; then
     warn "memory-routing already exists at ${PLUGIN_DIR}"
-    read -rp "  Pull latest changes? (y/N) " -r
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        info "Pulling latest from ${REPO}..."
-        (cd "${PLUGIN_DIR}" && git pull --ff-only) || (cd "${PLUGIN_DIR}" && git fetch origin && git checkout -f origin/main)
-        ok "Updated"
+    if [ -t 0 ]; then
+        read -rp "  Pull latest changes? (y/N) " -r
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            info "Pulling latest from ${REPO}..."
+            (cd "${PLUGIN_DIR}" && git pull --ff-only) || (cd "${PLUGIN_DIR}" && git fetch origin && git checkout -f origin/main)
+            ok "Updated"
+        else
+            info "Skipping git pull"
+        fi
     else
-        info "Skipping git pull"
+        info "Non-interactive mode: skipping git pull"
     fi
 else
     info "Cloning ${REPO}..."
@@ -103,27 +107,43 @@ try:
     print(model, provider, base_url, api_key)
 except Exception:
     print('','','','')
-" 2>/dev/null)
+" 2>/dev/null) || true
 
 # If auto-detect succeeded, resolve API key from .env if it's a variable name
 if [ -n "$LLM_MODEL" ]; then
     LLM_API_KEY="$LLM_API_KEY_RAW"
-    if [[ "$LLM_API_KEY" =~ ^[A-Z_][A-Z0-9_]*$ ]] && [ -f "$ENV_FILE" ]; then
-        RESOLVED=$(grep "^${LLM_API_KEY}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)
-        [ -n "$RESOLVED" ] && LLM_API_KEY="$RESOLVED"
+    if [[ "$LLM_API_KEY" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
+        # Check profile .env first, then global .env
+        for CHECK_ENV in "$ENV_FILE" "$HOME/.hermes/.env"; do
+            if [ -f "$CHECK_ENV" ]; then
+                RESOLVED=$(grep "^${LLM_API_KEY}=" "$CHECK_ENV" 2>/dev/null | head -1 | cut -d= -f2-) || true
+                if [ -n "$RESOLVED" ]; then
+                    LLM_API_KEY="$RESOLVED"
+                    break
+                fi
+            fi
+        done
     fi
 else
     warn "Could not auto-detect LLM config from ${CONFIG_YAML}"
-    echo "  Please enter the LLM settings for memory-routing's intent classifier."
-    echo "  (Press Enter to skip and use server.py defaults)"
-    read -rp "  Model [Qwen3.5-9B-AWQ]: " LLM_MODEL
-    LLM_MODEL="${LLM_MODEL:-Qwen3.5-9B-AWQ}"
-    read -rp "  Provider [custom]: " LLM_PROVIDER
-    LLM_PROVIDER="${LLM_PROVIDER:-custom}"
-    read -rp "  Base URL [http://10.10.4.9:8000/v1]: " LLM_BASE_URL
-    LLM_BASE_URL="${LLM_BASE_URL:-http://10.10.4.9:8000/v1}"
-    read -rp "  API Key [VLLM]: " LLM_API_KEY
-    LLM_API_KEY="${LLM_API_KEY:-VLLM}"
+    if [ -t 0 ]; then
+        echo "  Please enter the LLM settings for memory-routing's intent classifier."
+        echo "  (Press Enter to skip and use server.py defaults)"
+        read -rp "  Model [Qwen3.5-9B-AWQ]: " LLM_MODEL
+        LLM_MODEL="${LLM_MODEL:-Qwen3.5-9B-AWQ}"
+        read -rp "  Provider [custom]: " LLM_PROVIDER
+        LLM_PROVIDER="${LLM_PROVIDER:-custom}"
+        read -rp "  Base URL [http://10.10.4.9:8000/v1]: " LLM_BASE_URL
+        LLM_BASE_URL="${LLM_BASE_URL:-http://10.10.4.9:8000/v1}"
+        read -rp "  API Key [VLLM]: " LLM_API_KEY
+        LLM_API_KEY="${LLM_API_KEY:-VLLM}"
+    else
+        warn "Non-interactive mode: using server.py defaults"
+        LLM_MODEL="Qwen3.5-9B-AWQ"
+        LLM_PROVIDER="custom"
+        LLM_BASE_URL="http://10.10.4.9:8000/v1"
+        LLM_API_KEY="VLLM"
+    fi
 fi
 
 info "LLM configuration for memory-routing:"
@@ -141,21 +161,23 @@ import yaml
 with open('${CONFIG_YAML}', 'r') as f:
     cfg = yaml.safe_load(f)
 print('yes' if cfg.get('mcp_servers', {}).get('memory-routing') else 'no')
-" 2>/dev/null || echo "no")
+" 2>/dev/null) || ALREADY_EXISTS="no"
 
 if [ "$ALREADY_EXISTS" = "yes" ]; then
     warn "memory-routing MCP server already registered in config.yaml"
-    read -rp "  Update the existing registration? (y/N) " -r
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        ok "Skipping config update"
+    if [ -t 0 ]; then
+        read -rp "  Update the existing registration? (y/N) " -r
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            ok "Skipping config update"
+        fi
     else
-        info "Updating existing registration..."
+        info "Non-interactive mode: updating existing registration"
     fi
 fi
 
-if [ "$ALREADY_EXISTS" != "yes" ] || [[ $REPLY =~ ^[Yy]$ ]]; then
-    python3 - "$CONFIG_YAML" "$PLUGIN_DIR" "$LLM_PROVIDER" "$LLM_MODEL" "$LLM_BASE_URL" "$LLM_API_KEY" << 'PYEOF'
-import yaml, shutil, sys, os
+# Apply registration (new or update)
+python3 - "$CONFIG_YAML" "$PLUGIN_DIR" "$LLM_PROVIDER" "$LLM_MODEL" "$LLM_BASE_URL" "$LLM_API_KEY" << 'PYEOF'
+import yaml, shutil, sys
 
 config_path   = sys.argv[1]
 plugin_path   = sys.argv[2]
@@ -193,9 +215,8 @@ with open(config_path, 'w') as f:
 print("OK")
 PYEOF
 
-    ok "MCP server registered in config.yaml"
-    ok "Backup saved: ${CONFIG_YAML}.bak.memory-routing"
-fi
+ok "MCP server registered in config.yaml"
+ok "Backup saved: ${CONFIG_YAML}.bak.memory-routing"
 
 # ─── Step 5: Verify ────────────────────────────────────────────────────────
 info "Verifying installation..."
